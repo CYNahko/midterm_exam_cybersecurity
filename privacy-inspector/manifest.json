@@ -1,0 +1,10 @@
+{
+    "manifest_version": 3,
+    "name": "Privacy Inspector",
+    "version": "0.1.0",
+    "description": "Detecta possíveis rastreadores e mecanismos de armazenamento em páginas web.",
+    "action":{
+        "default_title": "Privacy Inspector",
+        "default_popup": "popup.html"
+    }
+}
