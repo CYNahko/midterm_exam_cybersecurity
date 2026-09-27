@@ -7,7 +7,22 @@
 </head>
 <body>
   <h1>Privacy Inspector</h1>
-  <p id="status">Extensão funcionando!</p>
+
+  <p id="status">Carregando análise...</p>
+
+  <section id="report" hidden>
+    <p>
+      Página:
+      <strong id="page-domain"></strong>
+    </p>
+
+    <p>
+      Domínios de terceiros únicos:
+      <strong id="domain-count">0</strong>
+    </p>
+
+    <ul id="domain-list"></ul>
+  </section>
 
   <script src="popup.js"></script>
 </body>

@@ -1,9 +1,23 @@
 body {
-  width: 320px;
+  width: 340px;
+  max-height: 500px;
   padding: 16px;
   font-family: Arial, sans-serif;
+  color: #202124;
 }
 
 h1 {
+  margin-top: 0;
   font-size: 20px;
+}
+
+ul {
+  max-height: 320px;
+  padding-left: 22px;
+  overflow-y: auto;
+}
+
+li {
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
 }

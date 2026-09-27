@@ -9,7 +9,8 @@
     },
     "permissions": [
         "webRequest",
-        "publicSuffix"
+        "publicSuffix",
+        "storage"
     ],
     "host_permissions": [
         "<all_urls>"
