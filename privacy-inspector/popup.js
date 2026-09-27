@@ -4,6 +4,14 @@ async function showReport() {
   const pageDomain = document.getElementById("page-domain");
   const domainCount = document.getElementById("domain-count");
   const domainList = document.getElementById("domain-list");
+  const localStorageCount =
+    document.getElementById("local-storage-count");
+
+  const sessionStorageCount =
+    document.getElementById("session-storage-count");
+
+  const indexedDbCount =
+    document.getElementById("indexed-db-count");
 
   const [activeTab] = await browser.tabs.query({
     active: true,
@@ -32,6 +40,24 @@ async function showReport() {
     const item = document.createElement("li");
     item.textContent = domain;
     domainList.appendChild(item);
+  }
+  const storage = tabData.storage;
+
+  if (storage) {
+    localStorageCount.textContent =
+      storage.localStorage.available
+        ? storage.localStorage.itemCount
+        : "indisponível";
+
+    sessionStorageCount.textContent =
+      storage.sessionStorage.available
+        ? storage.sessionStorage.itemCount
+        : "indisponível";
+
+    indexedDbCount.textContent =
+      storage.indexedDB.available
+        ? storage.indexedDB.databaseCount
+        : "indisponível";
   }
 
   status.hidden = true;

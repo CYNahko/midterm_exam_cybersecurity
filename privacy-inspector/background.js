@@ -94,3 +94,28 @@ browser.tabs.onRemoved.addListener((tabId) => {
   tabs.delete(tabId);
   browser.storage.session.remove(getStorageKey(tabId));
 });
+
+browser.runtime.onMessage.addListener(async (message, sender) => {
+  if (message.type !== "STORAGE_REPORT") {
+    return;
+  }
+
+  const tabId = sender.tab?.id;
+
+  if (tabId === undefined) {
+    return;
+  }
+
+  let tabData = await getTabData(tabId);
+
+  if (!tabData) {
+    tabData = {
+      pageDomain: getDomain(sender.url),
+      thirdPartyDomains: []
+    };
+  }
+
+  tabData.storage = message.storage;
+
+  await saveTabData(tabId, tabData);
+});
