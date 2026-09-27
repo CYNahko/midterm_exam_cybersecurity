@@ -4,14 +4,14 @@ async function showReport() {
   const pageDomain = document.getElementById("page-domain");
   const domainCount = document.getElementById("domain-count");
   const domainList = document.getElementById("domain-list");
-  const localStorageCount =
-    document.getElementById("local-storage-count");
-
-  const sessionStorageCount =
-    document.getElementById("session-storage-count");
-
-  const indexedDbCount =
-    document.getElementById("indexed-db-count");
+  const localStorageCount = document.getElementById("local-storage-count");
+  const sessionStorageCount = document.getElementById("session-storage-count");
+  const indexedDbCount = document.getElementById("indexed-db-count");
+  const cookieTotal = document.getElementById("cookie-total");
+  const cookieFirstParty = document.getElementById("cookie-first-party");
+  const cookieThirdParty = document.getElementById("cookie-third-party");
+  const cookieSession = document.getElementById("cookie-session");
+  const cookiePersistent = document.getElementById("cookie-persistent");
 
   const [activeTab] = await browser.tabs.query({
     active: true,
@@ -58,6 +58,16 @@ async function showReport() {
       storage.indexedDB.available
         ? storage.indexedDB.databaseCount
         : "indisponível";
+  }
+
+  const cookieStats = tabData.cookieStats;
+
+  if (cookieStats) {
+    cookieTotal.textContent = cookieStats.total;
+    cookieFirstParty.textContent = cookieStats.firstParty;
+    cookieThirdParty.textContent = cookieStats.thirdParty;
+    cookieSession.textContent = cookieStats.session;
+    cookiePersistent.textContent = cookieStats.persistent;
   }
 
   status.hidden = true;

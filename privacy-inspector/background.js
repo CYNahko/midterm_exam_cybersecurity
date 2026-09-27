@@ -57,7 +57,14 @@ async function handleRequest(request) {
   if (request.type === "main_frame") {
     const tabData = {
       pageDomain: requestDomain,
-      thirdPartyDomains: []
+      thirdPartyDomains: [],
+      cookieStats: {
+        total: 0,
+        firstParty: 0,
+        thirdParty: 0,
+        session: 0,
+        persistent: 0
+      }
     };
 
     await saveTabData(request.tabId, tabData);
@@ -119,3 +126,69 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
 
   await saveTabData(tabId, tabData);
 });
+
+async function handleResponseHeaders(details) {
+  if (details.tabId < 0) {
+    return;
+  }
+
+  const setCookieHeaders = (details.responseHeaders ?? []).filter(
+    (header) => header.name.toLowerCase() === "set-cookie"
+  );
+
+  if (setCookieHeaders.length === 0) {
+    return;
+  }
+
+  const tabData = await getTabData(details.tabId);
+
+  if (!tabData) {
+    return;
+  }
+
+  if (!tabData.cookieStats) {
+    tabData.cookieStats = {
+      total: 0,
+      firstParty: 0,
+      thirdParty: 0,
+      session: 0,
+      persistent: 0
+    };
+  }
+
+  const responseDomain = getDomain(details.url);
+  const isFirstParty = responseDomain === tabData.pageDomain;
+
+  for (const header of setCookieHeaders) {
+    const value = header.value ?? "";
+
+    const isPersistent =
+      /(?:^|;\s*)(expires|max-age)=/i.test(value);
+
+    tabData.cookieStats.total += 1;
+
+    if (isFirstParty) {
+      tabData.cookieStats.firstParty += 1;
+    } else {
+      tabData.cookieStats.thirdParty += 1;
+    }
+
+    if (isPersistent) {
+      tabData.cookieStats.persistent += 1;
+    } else {
+      tabData.cookieStats.session += 1;
+    }
+  }
+
+  await saveTabData(details.tabId, tabData);
+}
+
+browser.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    handleResponseHeaders(details);
+  },
+  {
+    urls: ["<all_urls>"]
+  },
+  ["responseHeaders"]
+);
