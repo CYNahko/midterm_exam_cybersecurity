@@ -7,6 +7,9 @@ async function showReport() {
   const localStorageCount = document.getElementById("local-storage-count");
   const sessionStorageCount = document.getElementById("session-storage-count");
   const indexedDbCount = document.getElementById("indexed-db-count");
+  const canvasDetected = document.getElementById("canvas-detected");
+  const canvasTotal = document.getElementById("canvas-total");
+  const canvasMethodList = document.getElementById("canvas-method-list");
   const cookieTotal = document.getElementById("cookie-total");
   const cookieFirstParty = document.getElementById("cookie-first-party");
   const cookieThirdParty = document.getElementById("cookie-third-party");
@@ -58,6 +61,21 @@ async function showReport() {
       storage.indexedDB.available
         ? storage.indexedDB.databaseCount
         : "indisponível";
+  }
+
+  const canvasFingerprint = tabData.canvasFingerprint;
+
+  if (canvasFingerprint) {
+    canvasDetected.textContent = canvasFingerprint.detected ? "sim" : "não";
+    canvasTotal.textContent = canvasFingerprint.totalCalls;
+
+    for (const [method, count] of Object.entries(
+      canvasFingerprint.methods ?? {}
+    ).sort(([first], [second]) => first.localeCompare(second))) {
+      const item = document.createElement("li");
+      item.textContent = `${method}: ${count}`;
+      canvasMethodList.appendChild(item);
+    }
   }
 
   const cookieStats = tabData.cookieStats;

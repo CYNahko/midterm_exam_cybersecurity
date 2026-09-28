@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Privacy Inspector",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Detecta possíveis rastreadores e mecanismos de armazenamento em páginas web.",
     "action":{
         "default_title": "Privacy Inspector",
@@ -24,7 +24,13 @@
         {
             "matches": ["<all_urls>"],
             "js": ["content-script.js"],
-            "run_at": "document_idle"
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["<all_urls>"],
+            "js": ["canvas-detector.js"],
+            "run_at": "document_start",
+            "world": "MAIN"
         }
     ]
 }

@@ -64,6 +64,11 @@ async function handleRequest(request) {
         thirdParty: 0,
         session: 0,
         persistent: 0
+      },
+      canvasFingerprint: {
+        detected: false,
+        totalCalls: 0,
+        methods: {}
       }
     };
 
@@ -103,10 +108,6 @@ browser.tabs.onRemoved.addListener((tabId) => {
 });
 
 browser.runtime.onMessage.addListener(async (message, sender) => {
-  if (message.type !== "STORAGE_REPORT") {
-    return;
-  }
-
   const tabId = sender.tab?.id;
 
   if (tabId === undefined) {
@@ -118,11 +119,46 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   if (!tabData) {
     tabData = {
       pageDomain: getDomain(sender.url),
-      thirdPartyDomains: []
+      thirdPartyDomains: [],
+      cookieStats: {
+        total: 0,
+        firstParty: 0,
+        thirdParty: 0,
+        session: 0,
+        persistent: 0
+      },
+      canvasFingerprint: {
+        detected: false,
+        totalCalls: 0,
+        methods: {}
+      }
     };
   }
 
-  tabData.storage = message.storage;
+  if (message.type === "STORAGE_REPORT") {
+    tabData.storage = message.storage;
+  } else if (message.type === "CANVAS_API_CALL") {
+    if (!tabData.canvasFingerprint) {
+      tabData.canvasFingerprint = {
+        detected: false,
+        totalCalls: 0,
+        methods: {}
+      };
+    }
+
+    const api = message.api;
+
+    if (typeof api !== "string" || api.length > 100) {
+      return;
+    }
+
+    tabData.canvasFingerprint.detected = true;
+    tabData.canvasFingerprint.totalCalls += 1;
+    tabData.canvasFingerprint.methods[api] =
+      (tabData.canvasFingerprint.methods[api] ?? 0) + 1;
+  } else {
+    return;
+  }
 
   await saveTabData(tabId, tabData);
 });
