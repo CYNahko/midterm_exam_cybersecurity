@@ -1,0 +1,273 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+\usepackage{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{longtable}
+
+\geometry{
+    top=2.5cm,
+    bottom=2.5cm,
+    left=3cm,
+    right=3cm
+}
+
+\title{
+    Privacy Inspector:\\
+    Detecção e Análise de Rastreadores e Mecanismos de Armazenamento no Firefox
+}
+
+\author{
+    Cynthia Naoko Yasutake\\
+    Insper
+}
+
+\date{Setembro de 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introdução}
+
+Este relatório apresenta o desenvolvimento e a validação do Privacy Inspector, uma extensão para o navegador Mozilla Firefox destinada à identificação de conexões com domínios de terceiros, cookies definidos durante o carregamento e mecanismos de armazenamento HTML5 utilizados por páginas web.
+
+\section{Metodologia do plugin}
+
+O Privacy Inspector foi desenvolvido como uma extensão WebExtension para o Mozilla Firefox, utilizando o Manifest V3. A solução é composta por um script de background, um content script e uma interface apresentada por meio do popup da extensão. Essa separação permite que o monitoramento de rede seja mantido independentemente da abertura do popup, enquanto a inspeção de recursos pertencentes ao contexto da página é realizada pelo content script.
+
+As requisições de rede são observadas pelo script de background por meio da API \texttt{webRequest}. Ao iniciar o carregamento de uma página, a extensão registra o domínio principal da aba. Para cada requisição subsequente, o domínio registrável é obtido com a API \texttt{publicSuffix}, considerando o domínio efetivo de nível superior acrescido de um componente, ou eTLD+1. Uma conexão é classificada como de terceira parte quando o domínio registrável do recurso solicitado é diferente do domínio registrável da página principal. Os domínios identificados são armazenados sem duplicatas e apresentados no popup como domínios de terceiros únicos.
+
+Os cookies definidos durante o carregamento são identificados pela inspeção dos cabeçalhos HTTP \texttt{Set-Cookie} recebidos pela API \texttt{webRequest.onHeadersReceived}. A classificação entre primeira e terceira parte considera o domínio da resposta que definiu o cookie em relação ao domínio principal da página. Cookies que apresentam os atributos \texttt{Expires} ou \texttt{Max-Age} são classificados como persistentes, enquanto aqueles que não apresentam nenhum desses atributos são classificados como cookies de sessão. A contagem representa eventos de definição de cookies em respostas HTTP, não a quantidade total de cookies previamente armazenados no navegador.
+
+A identificação do armazenamento HTML5 é realizada por um content script executado no contexto do documento principal. O script verifica a quantidade de itens presentes em \texttt{localStorage} e \texttt{sessionStorage}, além de consultar os bancos disponíveis no IndexedDB. Os resultados são enviados ao script de background pelo mecanismo de mensagens da WebExtensions API. Os dados coletados são organizados por aba e mantidos em \texttt{storage.session}, permitindo que o popup recupere o relatório correspondente à página ativa.
+
+A interface do Privacy Inspector apresenta o domínio principal, a quantidade e a lista de domínios terceiros únicos, a utilização dos três mecanismos de armazenamento HTML5 e a distribuição dos cookies observados. A metodologia possui limitações conhecidas: um domínio terceiro não é necessariamente um rastreador ou uma organização externa; cookies criados diretamente por JavaScript não são contabilizados pela inspeção de \texttt{Set-Cookie}; e a análise de armazenamento representa o documento principal, sem detalhar individualmente o estado de cada iframe de terceiro. Essas limitações são consideradas na análise das divergências observadas durante a validação.
+
+\section{DuckDuckGo Privacy Test Pages}
+
+A validação do Privacy Inspector foi realizada com as DuckDuckGo Privacy Test Pages, uma coleção padronizada de páginas destinadas à avaliação de mecanismos de privacidade e segurança em navegadores e extensões. Conforme os critérios da avaliação, foram consideradas as categorias Tracker Reporting, Storage Blocking e Fingerprinting/Canvas para a cobertura mínima do conceito C. Os testes adicionais relacionados a Tracker Blocking, Storage Partitioning, Bounce Tracking e Query Parameters foram organizados separadamente por corresponderem aos requisitos dos conceitos superiores.
+
+Para cada caso, a página de teste foi aberta no Firefox e atualizada para iniciar uma nova coleta por aba. Nos testes que criavam requisições de forma atrasada, aguardou-se o intervalo indicado pela própria página antes da abertura do popup. Nos testes interativos, como Storage Blocking, as ações de armazenamento e recuperação foram executadas na ordem apresentada pela página. Após a conclusão de cada procedimento, o popup do Privacy Inspector foi aberto e seu resultado foi registrado por meio de captura de tela, mantendo visíveis a URL, a descrição ou o resultado esperado da página e o relatório produzido pela extensão.
+
+Os resultados foram organizados em tabelas contendo o teste executado, o comportamento esperado reportado pela página, o resultado observado no Privacy Inspector e a explicação técnica das divergências. A comparação considera que as páginas do DuckDuckGo podem classificar explicitamente determinados domínios como rastreadores e distinguir o mecanismo responsável por uma requisição, enquanto a versão avaliada do Privacy Inspector apresenta inicialmente os domínios como terceiros, sem necessariamente associá-los a uma lista de rastreadores conhecidos.
+
+As divergências não foram avaliadas apenas pela diferença numérica entre os resultados. Foram considerados o momento em que a requisição ocorreu, o contexto de primeira ou terceira parte, o mecanismo utilizado para carregar o recurso, as limitações das APIs disponíveis à extensão e o escopo específico da coleta implementada. Cada resultado foi acompanhado de sua respectiva captura de tela, de modo a preservar evidências da página executada e do comportamento apresentado pelo plugin.
+
+\subsection{Tracker Reporting}
+
+Os testes de Tracker Reporting verificam se a extensão identifica conexões realizadas com domínios associados a rastreadores. A Tabela~\ref{tab:tracker-reporting} compara o comportamento esperado das páginas de teste com os resultados apresentados pelo Privacy Inspector.
+
+\small
+\begin{longtable}{|p{2.5cm}|p{2.7cm}|p{3.2cm}|p{4.8cm}|}
+
+\caption{Resultados dos testes de Tracker Reporting.}
+\label{tab:tracker-reporting} \\
+
+\hline
+\textbf{Teste} &
+\textbf{Esperado} &
+\textbf{Resultado do plugin} &
+\textbf{Explicação} \\ \hline
+\endfirsthead
+
+\hline
+\textbf{Teste} &
+\textbf{Esperado} &
+\textbf{Resultado do plugin} &
+\textbf{Explicação} \\ \hline
+\endhead
+
+Major tracker via script &
+Um major tracker carregado por script &
+Um domínio terceiro detectado: \texttt{doubleclick.net} &
+O plugin detectou a conexão, mas não classificou explicitamente o domínio como rastreador nem apresentou o tipo do recurso no popup. \\ \hline
+
+Major tracker via imagem &
+Um major tracker carregado por uma imagem &
+Um domínio terceiro detectado: \texttt{facebook.com}; um cookie de terceira parte e de sessão &
+O plugin identificou a conexão com o domínio terceiro e o cookie definido na resposta. Entretanto, não classificou explicitamente o domínio como rastreador nem apresentou no popup que o recurso era do tipo imagem. \\ \hline
+
+Major tracker com surrogate &
+Um major tracker com suporte a substituição por surrogate &
+Um domínio terceiro detectado: \texttt{doubleclick.net}; nenhum cookie ou armazenamento identificado &
+O plugin identificou a conexão com o domínio terceiro, mas não verifica se o script rastreador foi bloqueado ou substituído por um surrogate. Portanto, não é possível confirmar esse mecanismo somente com o relatório atual. \\ \hline
+
+Tracker via DocumentFragment &
+Uma requisição de rastreamento criada dinamicamente por um fragmento do documento &
+Um domínio terceiro detectado: \texttt{facebook.com}; um cookie de terceira parte e de sessão &
+O plugin detectou corretamente a conexão criada dinamicamente, pois monitora as requisições de rede independentemente de o elemento estar presente no HTML original. Porém, não informa no popup que a origem da requisição foi um \texttt{DocumentFragment}. \\ \hline
+
+Tracker via DocumentFragment com atraso &
+Uma requisição de rastreamento criada dinamicamente após cinco segundos &
+Um domínio terceiro detectado: \texttt{facebook.com}; um cookie de terceira parte e de sessão &
+O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demonstrando que o monitoramento de rede permanece ativo depois do carregamento inicial. O popup não apresenta o tempo decorrido nem identifica o uso de \texttt{DocumentFragment}. \\ \hline
+
+Major tracker via Fetch &
+Um tracker carregado por uma chamada à API Fetch &
+Um domínio terceiro detectado: \texttt{facebook.com}; um cookie persistente de terceira parte &
+O plugin detectou corretamente a conexão e o cookie resultantes da chamada Fetch. Entretanto, o popup não informa que a requisição foi iniciada pela API Fetch nem classifica explicitamente o domínio como rastreador. \\ \hline
+
+Major tracker via Fetch com atraso &
+Um tracker carregado por uma chamada Fetch após cinco segundos &
+Um domínio terceiro detectado: \texttt{facebook.com}; um cookie persistente de terceira parte &
+O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demonstrando que o monitoramento permanece ativo depois do carregamento inicial. Entretanto, o popup não apresenta o tempo decorrido nem identifica a requisição como Fetch. \\ \hline
+
+\end{longtable}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/1-major-via-script.png}
+    \caption{Resultado do Privacy Inspector no teste de carregamento de um rastreador por script.}
+    \label{fig:major-via-script}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/1-major-via-img.png}
+    \caption{Resultado do Privacy Inspector no teste de carregamento de um rastreador por imagem.}
+    \label{fig:major-via-img}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/1-major-via-surrogate.png}
+    \caption{Resultado do Privacy Inspector no teste de rastreador com suporte a surrogate.}
+    \label{fig:major-with-surrogate}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/tracker-document-fragment.png}
+    \caption{Resultado do Privacy Inspector no teste de rastreador criado por DocumentFragment.}
+    \label{fig:tracker-document-fragment}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/tracker-document-fragment-delay-5s.png}
+    \caption{Resultado do Privacy Inspector no teste de rastreador criado por DocumentFragment após cinco segundos.}
+    \label{fig:tracker-document-fragment-delay}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/1-major-via-fetch.png}
+    \caption{Resultado do Privacy Inspector no teste de carregamento de rastreador por Fetch.}
+    \label{fig:major-via-fetch}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/1-major-via-fetch-delay-5s.png}
+    \caption{Resultado do Privacy Inspector no teste de rastreador carregado por Fetch após cinco segundos.}
+    \label{fig:major-via-fetch-delay}
+\end{figure}
+
+\subsection{Storage Blocking}
+
+O teste de Storage Blocking verifica o comportamento de diferentes mecanismos de armazenamento no documento principal e em contextos de terceiros. A Tabela~\ref{tab:storage-blocking} compara o resultado reportado pela página com as informações apresentadas pelo Privacy Inspector.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{2.5cm}|p{3cm}|p{3.5cm}|p{4.5cm}|}
+\hline
+\textbf{Teste} &
+\textbf{Esperado} &
+\textbf{Resultado do plugin} &
+\textbf{Explicação} \\ \hline
+
+Storage Blocking &
+A página tentou armazenar e recuperar o mesmo valor por 23 mecanismos, reportando duas falhas &
+O plugin detectou um item em \texttt{localStorage}, um em \texttt{sessionStorage}, um banco IndexedDB, dois domínios terceiros e nove cookies definidos por respostas HTTP &
+O plugin confirmou o uso dos três mecanismos HTML5 presentes no documento principal. Entretanto, não analisou individualmente o armazenamento dos iframes terceiros nem mecanismos como Cache API, WebSQL, CookieStore, Service Worker, memória, histórico e \texttt{window.name}. A contagem de cookies considera cabeçalhos HTTP \texttt{Set-Cookie}, enquanto a página também testa cookies definidos por JavaScript. \\ \hline
+
+\end{tabular}
+\caption{Resultado do teste de Storage Blocking.}
+\label{tab:storage-blocking}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/storage-blocking.png}
+    \caption{Resultado do Privacy Inspector no teste de Storage Blocking.}
+    \label{fig:storage-blocking}
+\end{figure}
+
+\subsection{Fingerprinting/Canvas}
+
+Os testes de fingerprinting verificam quais características do navegador podem ser coletadas para identificar um usuário, mesmo sem o uso de cookies ou conexões com terceiros. A página de teste coletou informações provenientes de diferentes APIs, incluindo Canvas, WebGL, Navigator e Screen. Os resultados apresentados pelo Privacy Inspector foram comparados com aqueles informados pela própria página de teste na Tabela~\ref{tab:fingerprinting}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{2.7cm}|p{3.2cm}|p{3.2cm}|p{4.3cm}|}
+\hline
+\textbf{Teste} &
+\textbf{Esperado} &
+\textbf{Resultado do plugin} &
+\textbf{Explicação} \\ \hline
+
+Fingerprinting geral &
+Coleta de características do navegador que podem ser utilizadas para construir uma impressão digital. A página coletou 124 dados, dos quais 14 falharam. &
+Nenhum mecanismo de fingerprinting foi indicado. O plugin apresentou zero domínios terceiros e zero cookies, além de um item em \texttt{localStorage} e um banco \texttt{IndexedDB}. &
+O plugin atual monitora conexões de rede, cookies definidos em respostas HTTP e armazenamento HTML5. Ele ainda não intercepta o acesso a APIs como Canvas, WebGL, Screen e Navigator. Portanto, a coleta ocorreu, mas não foi classificada como fingerprinting. \\ \hline
+
+Canvas visual check &
+Renderização e leitura de uma imagem por diferentes mecanismos de Canvas, incluindo conversão para \texttt{data URL}, leitura dos pixels e \texttt{OffscreenCanvas}. &
+As imagens foram renderizadas normalmente, mas o plugin não apresentou qualquer alerta de fingerprinting. Foram exibidos apenas os dados gerais de armazenamento, cookies e domínios terceiros. &
+O plugin ainda não intercepta chamadas às APIs de Canvas. Assim, operações potencialmente utilizadas para gerar uma impressão digital foram executadas sem serem identificadas pelo Privacy Inspector. \\ \hline
+
+\end{tabular}
+\caption{Resultado do teste geral de fingerprinting.}
+\label{tab:fingerprinting}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/fingerprinting-general.png}
+    \caption{Resultado do Privacy Inspector no teste geral de fingerprinting. A página coletou 124 características do navegador, enquanto o plugin não identificou explicitamente a atividade como fingerprinting.}
+    \label{fig:fingerprinting-general}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {figuras/fingerprinting-canvas.png}
+    \caption{Resultado do Privacy Inspector durante o teste visual de Canvas. As diferentes formas de renderização foram executadas, mas não foram classificadas pelo plugin como fingerprinting.}
+    \label{fig:fingerprinting-canvas}
+\end{figure}
+
+\subsection{Tracker Blocking}
+
+\subsection{Storage Partitioning}
+
+\subsection{Bounce Tracking e Query Parameters}
+
+\section{Análise dos três sites reais}
+
+\section{Comparação com Blacklight e uBlock Origin}
+
+\section{Metodologia da Pontuação de Privacidade}
+
+\section{Limitações e divergências}
+
+\section{Conclusão}
+
+\end{document}
