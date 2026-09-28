@@ -50,4 +50,26 @@ async function detectStorage() {
   });
 }
 
+window.addEventListener("message", (event) => {
+  if (event.source !== window) {
+    return;
+  }
+
+  const message = event.data;
+
+  if (
+    !message ||
+    message.source !== "privacy-inspector-canvas" ||
+    message.type !== "CANVAS_API_CALL" ||
+    typeof message.api !== "string"
+  ) {
+    return;
+  }
+
+  browser.runtime.sendMessage({
+    type: "CANVAS_API_CALL",
+    api: message.api
+  });
+});
+
 setTimeout(detectStorage, 1000);
