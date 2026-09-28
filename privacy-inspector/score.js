@@ -7,16 +7,22 @@
 //   penalidade = peso * min(valor / limite, 1)
 //   score      = 100 - soma das penalidades
 //
+// Critério dos pesos: quanto mais um mecanismo permite que terceiros
+// identifiquem o usuário entre sites e compartilhem ou comercializem esses
+// dados (ou ajam sem o consentimento dele), maior o peso.
 
 const SCORE_CRITERIA = [
   {
+    // Vaza IP e página visitada, mas sozinho não identifica o usuário; muitos
+    // domínios são CDNs ou da mesma organização.
     id: "thirdPartyDomains",
     label: "Domínios de terceiros",
-    weight: 25,
+    weight: 10,
     limit: 20,
     getValue: (data) => data.thirdPartyDomains?.length ?? 0
   },
   {
+    // Identificador clássico que acompanha o usuário entre sites.
     id: "thirdPartyCookies",
     label: "Cookies de terceira parte",
     weight: 20,
@@ -24,16 +30,18 @@ const SCORE_CRITERIA = [
     getValue: (data) => data.cookieStats?.thirdParty ?? 0
   },
   {
+    // Em geral da própria página; indicam duração, não compartilhamento.
     id: "persistentCookies",
     label: "Cookies persistentes",
-    weight: 10,
+    weight: 5,
     limit: 20,
     getValue: (data) => data.cookieStats?.persistent ?? 0
   },
   {
+    // Medido apenas no documento principal, ou seja, dados da própria página.
     id: "html5Storage",
     label: "Armazenamento HTML5",
-    weight: 10,
+    weight: 5,
     limit: 20,
     getValue: (data) => {
       const storage = data.storage;
@@ -50,6 +58,9 @@ const SCORE_CRITERIA = [
     }
   },
   {
+    // Identifica entre sites e não pode ser apagado pelo usuário; peso menor
+    // que o de cookies de terceiros porque o detector conta qualquer uso de
+    // canvas, com risco de falso positivo.
     id: "canvasFingerprint",
     label: "Canvas fingerprinting",
     weight: 15,
@@ -57,16 +68,20 @@ const SCORE_CRITERIA = [
     getValue: (data) => (data.canvasFingerprint?.detected ? 1 : 0)
   },
   {
+    // Troca direta do identificador do usuário entre empresas: é o
+    // compartilhamento de dados acontecendo.
     id: "cookieSync",
     label: "Bounce tracking / cookie sync",
-    weight: 10,
+    weight: 25,
     limit: 3,
     getValue: (data) => data.syncIndicators?.length ?? 0
   },
   {
+    // Terceiros executando ações sem consentimento (abrir abas, redirecionar,
+    // interceptar requisições) e podendo exfiltrar dados.
     id: "hijacking",
     label: "Indicadores de hijacking/hook",
-    weight: 10,
+    weight: 20,
     limit: 3,
     getValue: (data) => data.hijackIndicators?.length ?? 0
   }
