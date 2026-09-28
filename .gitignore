@@ -1,0 +1,3 @@
+# HARs brutos contem cookies/IDs pessoais; so versionar a versao sanitizada
+*.har
+!*.sanitized.har

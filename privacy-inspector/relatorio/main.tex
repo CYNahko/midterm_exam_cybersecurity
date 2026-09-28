@@ -124,7 +124,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/1-major-via-script.png}
+        {evidencias/tracker-reporting/1-major-via-script.png}
     \caption{Resultado do Privacy Inspector no teste de carregamento de um rastreador por script.}
     \label{fig:major-via-script}
 \end{figure}
@@ -132,7 +132,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/1-major-via-img.png}
+        {evidencias/tracker-reporting/1-major-via-img.png}
     \caption{Resultado do Privacy Inspector no teste de carregamento de um rastreador por imagem.}
     \label{fig:major-via-img}
 \end{figure}
@@ -140,7 +140,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/1-major-via-surrogate.png}
+        {evidencias/tracker-reporting/1-major-via-surrogate.png}
     \caption{Resultado do Privacy Inspector no teste de rastreador com suporte a surrogate.}
     \label{fig:major-with-surrogate}
 \end{figure}
@@ -148,7 +148,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/tracker-document-fragment.png}
+        {evidencias/tracker-reporting/tracker-document-fragment.png}
     \caption{Resultado do Privacy Inspector no teste de rastreador criado por DocumentFragment.}
     \label{fig:tracker-document-fragment}
 \end{figure}
@@ -156,7 +156,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/tracker-document-fragment-delay-5s.png}
+        {evidencias/tracker-reporting/tracker-document-fragment-delay-5s.png}
     \caption{Resultado do Privacy Inspector no teste de rastreador criado por DocumentFragment após cinco segundos.}
     \label{fig:tracker-document-fragment-delay}
 \end{figure}
@@ -164,7 +164,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/1-major-via-fetch.png}
+        {evidencias/tracker-reporting/1-major-via-fetch.png}
     \caption{Resultado do Privacy Inspector no teste de carregamento de rastreador por Fetch.}
     \label{fig:major-via-fetch}
 \end{figure}
@@ -172,7 +172,7 @@ O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demon
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/1-major-via-fetch-delay-5s.png}
+        {evidencias/tracker-reporting/1-major-via-fetch-delay-5s.png}
     \caption{Resultado do Privacy Inspector no teste de rastreador carregado por Fetch após cinco segundos.}
     \label{fig:major-via-fetch-delay}
 \end{figure}
@@ -204,7 +204,7 @@ O plugin confirmou o uso dos três mecanismos HTML5 presentes no documento princ
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/storage-blocking.png}
+        {evidencias/storage-blocking/storage-blocking.png}
     \caption{Resultado do Privacy Inspector no teste de Storage Blocking.}
     \label{fig:storage-blocking}
 \end{figure}
@@ -241,7 +241,7 @@ O plugin ainda não intercepta chamadas às APIs de Canvas. Assim, operações p
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/fingerprinting-general.png}
+        {evidencias/fingerprinting-canvas/fingerprinting-general.png}
     \caption{Resultado do Privacy Inspector no teste geral de fingerprinting. A página coletou 124 características do navegador, enquanto o plugin não identificou explicitamente a atividade como fingerprinting.}
     \label{fig:fingerprinting-general}
 \end{figure}
@@ -249,22 +249,102 @@ O plugin ainda não intercepta chamadas às APIs de Canvas. Assim, operações p
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]
-        {figuras/fingerprinting-canvas.png}
+        {evidencias/fingerprinting-canvas/fingerprinting-canvas.png}
     \caption{Resultado do Privacy Inspector durante o teste visual de Canvas. As diferentes formas de renderização foram executadas, mas não foram classificadas pelo plugin como fingerprinting.}
     \label{fig:fingerprinting-canvas}
 \end{figure}
 
-\subsection{Tracker Blocking}
+\section{Análise de Sites Reais}
 
-\subsection{Storage Partitioning}
+Para avaliar o funcionamento do Privacy Inspector em páginas reais, foram selecionados os sites G1, UBC e YouTube. Para cada página, os resultados apresentados pelo plugin foram comparados com os dados de rede registrados em um arquivo HAR sanitizado. As capturas de tela e os arquivos HAR sanitizados estão organizados no repositório em \texttt{relatorio/evidencias/sites-reais/}, em uma subpasta correspondente a cada site.
 
-\subsection{Bounce Tracking e Query Parameters}
+\subsection{G1}
 
-\section{Análise dos três sites reais}
+No G1, o Privacy Inspector identificou 18 domínios de terceiros únicos, resultado compatível com a análise do arquivo HAR. O HAR apresentou 175 entradas, das quais 173 correspondiam a requisições HTTP ou HTTPS. Entre essas requisições, 132 foram direcionadas a domínios de terceiros e 41 a domínios pertencentes à primeira parte.
 
-\section{Comparação com Blacklight e uBlock Origin}
+O arquivo utilizado nessa análise está disponível em \texttt{relatorio/evidencias/sites-reais/g1/g1.sanitized.har}.
 
-\section{Metodologia da Pontuação de Privacidade}
+Em relação aos cookies, o Privacy Inspector registrou 16 definições, todas de primeira parte e persistentes. O HAR apresentou 30 registros de definição de cookies, correspondentes a três nomes distintos: \texttt{glb\_uid}, \texttt{glb\_uid\_jwt} e \texttt{hsid}. Cada cookie foi redefinido múltiplas vezes durante o carregamento. A diferença numérica decorre da repetição das definições e dos limites temporais distintos das coletas. Os mecanismos \texttt{localStorage}, \texttt{sessionStorage} e IndexedDB não são representados pelo HAR, sendo observados diretamente pelo plugin.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {evidencias/sites-reais/g1/privacy-inspector.png}
+    \caption{Resultado principal do Privacy Inspector durante a análise do G1.}
+    \label{fig:g1-privacy-inspector}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]
+        {evidencias/sites-reais/g1/privacy-inspector-popup-continuation.png}
+    \caption{Continuação do popup com os resultados de armazenamento e cookies do G1.}
+    \label{fig:g1-popup-continuation}
+\end{figure}
+
+\subsection{UBC}
+
+No site institucional da University of British Columbia, o Privacy Inspector identificou sete domínios de terceiros únicos. Esse resultado foi confirmado pela análise do arquivo HAR, que apresentou 38 requisições distribuídas entre 11 hosts. Dessas requisições, 19 foram direcionadas à primeira parte e 19 a domínios de terceiros.
+
+O HAR registrou nove requisições com status zero, associadas a recursos bloqueados pelo mecanismo de proteção contra rastreamento do navegador. Apesar dessas tentativas de conexão, nenhum cookie foi definido nas respostas observadas. Esse resultado é compatível com o Privacy Inspector, que também apresentou zero cookies definidos durante o carregamento.
+
+Quanto ao armazenamento HTML5, o plugin identificou um item em \texttt{localStorage}, nenhum item em \texttt{sessionStorage} e nenhum banco IndexedDB. Esses mecanismos não são representados pelo formato HAR e, portanto, foram avaliados diretamente pelo Privacy Inspector.
+
+O arquivo utilizado nessa análise está disponível em \texttt{relatorio/evidencias/sites-reais/ubc/ubc.sanitized.har}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {evidencias/sites-reais/ubc/privacy-inspector-ubc.png}
+    \caption{Resultado do Privacy Inspector e registro de rede durante a análise do site da UBC.}
+    \label{fig:ubc-privacy-inspector}
+\end{figure}
+
+\subsection{YouTube}
+
+Na página inicial do YouTube, o Privacy Inspector identificou seis domínios de terceiros únicos. O arquivo HAR apresentou 56 entradas, das quais 51 correspondiam a requisições HTTP ou HTTPS. Entre essas requisições, 35 foram direcionadas à primeira parte e 16 a terceiros.
+
+A análise do HAR identificou sete domínios registráveis de terceiros. Seis deles também foram apresentados pelo plugin: \texttt{doubleclick.net}, \texttt{google.com}, \texttt{google.com.br}, \texttt{googlevideo.com}, \texttt{gstatic.com} e \texttt{ytimg.com}. O domínio adicional, \texttt{googleapis.com}, foi utilizado no carregamento de fontes, mas não apareceu no relatório do Privacy Inspector. Essa divergência pode decorrer do momento em que a requisição foi observada ou do uso de recursos previamente armazenados pelo navegador.
+
+Nenhum cookie foi definido pelas respostas registradas no HAR, resultado compatível com os zero cookies apresentados pelo Privacy Inspector. Embora o HAR contenha cabeçalhos de cookies enviados em algumas requisições, esses valores já estavam presentes no navegador e não foram definidos durante o carregamento analisado. O plugin contabiliza somente eventos associados a cabeçalhos HTTP \texttt{Set-Cookie} recebidos nas respostas.
+
+Quanto ao armazenamento HTML5, o Privacy Inspector identificou cinco itens em \texttt{localStorage}, três itens em \texttt{sessionStorage} e dez bancos IndexedDB. Esses mecanismos não são representados pelo formato HAR.
+
+O arquivo utilizado nessa análise está disponível em
+\texttt{relatorio/evidencias/sites-reais/youtube/youtube.sanitized.har}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]
+        {evidencias/sites-reais/youtube/privacy-inspector-youtube.png}
+    \caption{Resultado do Privacy Inspector e registro de rede durante a análise da página inicial do YouTube.}
+    \label{fig:youtube-privacy-inspector}
+\end{figure}
+
+\subsection{Comparação entre os sites}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{2cm}|c|c|c|c|c|}
+\hline
+\textbf{Site} &
+\textbf{Req. HAR} &
+\textbf{Terceiros no plugin} &
+\textbf{localStorage} &
+\textbf{sessionStorage} &
+\textbf{IndexedDB} \\ \hline
+
+G1 & 175 & 18 & 12 & 6 & 0 \\ \hline
+UBC & 38 & 7 & 1 & 0 & 0 \\ \hline
+YouTube & 56 & 6 & 5 & 3 & 10 \\ \hline
+
+\end{tabular}
+\caption{Comparação dos resultados observados nos três sites reais.}
+\label{tab:comparacao-sites}
+\end{table}
+
+O G1 apresentou a maior quantidade de requisições e domínios de terceiros, enquanto a UBC apresentou o menor uso de armazenamento HTML5. O YouTube se destacou pela utilização de dez bancos IndexedDB, refletindo a maior complexidade de armazenamento local de uma aplicação web dinâmica. Os resultados demonstram que quantidade de requisições, presença de terceiros e utilização de armazenamento são dimensões distintas do comportamento de privacidade de uma página.
 
 \section{Limitações e divergências}
 
