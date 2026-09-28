@@ -7,8 +7,6 @@
 //   penalidade = peso * min(valor / limite, 1)
 //   score      = 100 - soma das penalidades
 //
-// Critérios ainda não implementados no plugin (bounce tracking / cookie sync e
-// hijacking) contam como valor 0 até que a detecção correspondente exista.
 
 const SCORE_CRITERIA = [
   {

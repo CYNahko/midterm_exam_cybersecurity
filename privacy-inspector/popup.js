@@ -90,6 +90,7 @@ async function showReport() {
 
   renderBlockedRequests(tabData);
   renderHijackIndicators(tabData);
+  renderSyncIndicators(tabData);
   renderScore(tabData);
 
   status.hidden = true;
@@ -117,6 +118,19 @@ function renderScore(tabData) {
 
     row.append(label, value, penalty);
     breakdownBody.appendChild(row);
+  }
+}
+
+function renderSyncIndicators(tabData) {
+  const indicators = tabData.syncIndicators ?? [];
+  const list = document.getElementById("sync-list");
+
+  document.getElementById("sync-total").textContent = indicators.length;
+
+  for (const indicator of indicators) {
+    const item = document.createElement("li");
+    item.textContent = `${indicator.type}: ${indicator.detail}`;
+    list.appendChild(item);
   }
 }
 

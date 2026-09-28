@@ -61,18 +61,19 @@ function createTabData(pageDomain) {
       methods: {}
     },
     hijackIndicators: [],
+    syncIndicators: [],
     pollingCounts: {}
   };
 }
 
-// Indicadores de hijacking/hook. Cada combinação tipo + detalhe é registrada
-// uma única vez por página.
-function addHijackIndicator(tabData, type, detail) {
-  if (!tabData.hijackIndicators) {
-    tabData.hijackIndicators = [];
+// Registra um indicador na lista indicada (hijackIndicators ou syncIndicators).
+// Cada combinação tipo + detalhe é registrada uma única vez por página.
+function addIndicator(tabData, field, type, detail) {
+  if (!tabData[field]) {
+    tabData[field] = [];
   }
 
-  const exists = tabData.hijackIndicators.some(
+  const exists = tabData[field].some(
     (indicator) => indicator.type === type && indicator.detail === detail
   );
 
@@ -80,8 +81,16 @@ function addHijackIndicator(tabData, type, detail) {
     return false;
   }
 
-  tabData.hijackIndicators.push({ type, detail });
+  tabData[field].push({ type, detail });
   return true;
+}
+
+function addHijackIndicator(tabData, type, detail) {
+  return addIndicator(tabData, "hijackIndicators", type, detail);
+}
+
+function addSyncIndicator(tabData, type, detail) {
+  return addIndicator(tabData, "syncIndicators", type, detail);
 }
 
 // Requisições XHR/fetch repetidas ao mesmo terceiro depois do carregamento
@@ -130,11 +139,19 @@ async function handleRequest(request, blocked = false) {
   }
 
   if (request.type === "main_frame") {
-    const previousData = await getTabData(request.tabId);
+    // Leitura síncrona do mapa em memória quando possível, para não perder a
+    // ordem dos saltos em redirecionamentos HTTP rápidos (A -> X -> B).
+    const previousData =
+      tabs.get(request.tabId) ?? (await getTabData(request.tabId));
     const tabData = createTabData(requestDomain);
+    tabData.hostname = new URL(request.url).hostname;
 
-    // Guardado para detectar redirecionamentos automáticos (webNavigation).
+    // Histórico curto de navegação, usado para detectar redirecionamentos
+    // automáticos e bounce tracking (webNavigation.onCommitted).
     tabData.previousPageDomain = previousData?.pageDomain ?? null;
+    tabData.previousHostname = previousData?.hostname ?? null;
+    tabData.previousStartedAt = previousData?.startedAt ?? null;
+    tabData.originDomain = previousData?.previousPageDomain ?? null;
 
     await saveTabData(request.tabId, tabData);
     return;
@@ -395,38 +412,186 @@ browser.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
   }
 });
 
-// Redirecionamentos feitos pelo cliente (JavaScript ou meta refresh) para outro
-// domínio. Redirecionamentos HTTP (3xx) não são contados, pois são comuns em
-// casos legítimos como http -> https.
+// ---------------------------------------------------------------------------
+// Bounce tracking, cookie sync e parâmetros de rastreamento
+// ---------------------------------------------------------------------------
+
+// Tempo máximo de permanência em uma página intermediária para que o
+// redirecionamento seguinte seja considerado um "salto" (bounce).
+const BOUNCE_MAX_DWELL_MS = 10000;
+
+// Parâmetros de URL usados por plataformas de anúncios para identificar o
+// clique ou o usuário (mesma categoria testada na página Query Parameters do DDG).
+const TRACKING_PARAMS = new Set([
+  "fbclid", "fb_source", "fb_ref", "gclid", "dclid", "gbraid", "wbraid",
+  "msclkid", "yclid", "twclid", "ttclid", "igshid", "li_fat_id",
+  "mc_eid", "mc_cid", "_hsenc", "_hsmi", "mkt_tok", "oly_enc_id",
+  "oly_anon_id", "vero_id", "s_cid", "_ga", "_gl"
+]);
+
+function findTrackingParams(url) {
+  try {
+    const params = new URL(url).searchParams;
+
+    return [...params.keys()].filter(
+      (name) =>
+        TRACKING_PARAMS.has(name.toLowerCase()) ||
+        name.toLowerCase().startsWith("utm_")
+    );
+  } catch {
+    return [];
+  }
+}
+
+// Parâmetro que carrega um identificador: pelo nome (uid, user_id, ...) ou
+// pelo valor (longo, sem espaços e com dígitos, como UUIDs, hashes e IDs).
+const ID_PARAM_NAME = /uid|user_?id|visitor_?id|client_?id|device_?id/i;
+
+function findIdParam(url) {
+  try {
+    for (const [name, value] of new URL(url).searchParams) {
+      const decoded = value.trim();
+
+      if (ID_PARAM_NAME.test(name) && decoded.length > 0) {
+        return name;
+      }
+
+      if (
+        decoded.length >= 8 &&
+        decoded.length <= 200 &&
+        /^[A-Za-z0-9_.:%-]+$/.test(decoded) &&
+        /\d/.test(decoded)
+      ) {
+        return name;
+      }
+    }
+  } catch {
+    // URL inválida
+  }
+
+  return null;
+}
+
+// Cookie sync: um terceiro redireciona uma sub-requisição (geralmente um
+// pixel) para outro terceiro, levando um identificador na URL. É assim que
+// empresas de anúncios trocam os IDs que cada uma atribuiu ao mesmo usuário.
+browser.webRequest.onBeforeRedirect.addListener(
+  async (details) => {
+    if (details.tabId < 0 || details.type === "main_frame") {
+      return;
+    }
+
+    const tabData = tabs.get(details.tabId) ?? (await getTabData(details.tabId));
+
+    if (!tabData) {
+      return;
+    }
+
+    const fromDomain = getDomain(details.url);
+    const toDomain = getDomain(details.redirectUrl);
+
+    if (
+      !fromDomain ||
+      !toDomain ||
+      fromDomain === toDomain ||
+      fromDomain === tabData.pageDomain ||
+      toDomain === tabData.pageDomain
+    ) {
+      return;
+    }
+
+    const idParam = findIdParam(details.redirectUrl);
+
+    if (!idParam) {
+      return;
+    }
+
+    const added = addSyncIndicator(
+      tabData,
+      "Cookie sync (redirecionamento entre terceiros)",
+      `${fromDomain} -> ${toDomain} (parâmetro "${idParam}")`
+    );
+
+    if (added) {
+      await saveTabData(details.tabId, tabData);
+    }
+  },
+  {
+    urls: ["<all_urls>"]
+  }
+);
+
+// Analisa cada navegação do frame principal:
+// - parâmetros de rastreamento na URL da página;
+// - bounce tracking: A -> X -> B, em que X é outro site em relação a A, foi
+//   visitado por poucos segundos e redirecionou automaticamente (HTTP 3xx ou
+//   JavaScript) para B. Se B for do mesmo site que X (outro subdomínio), exige
+//   um identificador na URL, para não confundir com redirecionamentos comuns
+//   como example.com -> www.example.com;
+// - redirecionamento automático para outro domínio sem o padrão de bounce,
+//   tratado como indicador de hijacking. Redirecionamentos dentro do mesmo
+//   domínio (ex.: http -> https) são ignorados.
 browser.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) {
     return;
   }
 
-  const qualifiers = details.transitionQualifiers ?? [];
-
-  if (!qualifiers.includes("client_redirect")) {
-    return;
-  }
-
-  const tabData = await getTabData(details.tabId);
+  const tabData = tabs.get(details.tabId) ?? (await getTabData(details.tabId));
   const newDomain = getDomain(details.url);
 
-  if (
-    !tabData ||
-    !tabData.previousPageDomain ||
-    tabData.previousPageDomain === newDomain
-  ) {
+  if (!tabData || !newDomain) {
     return;
   }
 
-  const added = addHijackIndicator(
-    tabData,
-    "Redirecionamento automático",
-    `${tabData.previousPageDomain} -> ${newDomain}`
-  );
+  let changed = false;
 
-  if (added) {
+  const trackingParams = findTrackingParams(details.url);
+
+  if (trackingParams.length > 0) {
+    changed =
+      addSyncIndicator(
+        tabData,
+        "Parâmetros de rastreamento na URL",
+        trackingParams.join(", ")
+      ) || changed;
+  }
+
+  const qualifiers = details.transitionQualifiers ?? [];
+  const isClientRedirect = qualifiers.includes("client_redirect");
+  const isRedirect = isClientRedirect || qualifiers.includes("server_redirect");
+  const bounceDomain = tabData.previousPageDomain;
+  const bounceHost = tabData.previousHostname;
+  const newHost = new URL(details.url).hostname;
+
+  if (isRedirect && bounceDomain && bounceHost !== newHost) {
+    const dwell = tabData.startedAt - (tabData.previousStartedAt ?? 0);
+    const origin = tabData.originDomain;
+    const isCrossSite = bounceDomain !== newDomain;
+    const carriesId = findIdParam(details.url) !== null;
+
+    if (
+      dwell <= BOUNCE_MAX_DWELL_MS &&
+      origin &&
+      origin !== bounceDomain &&
+      (isCrossSite || carriesId)
+    ) {
+      changed =
+        addSyncIndicator(
+          tabData,
+          "Bounce tracking",
+          `${origin} -> ${bounceHost} -> ${newHost} (${Math.round(dwell / 100) / 10}s em ${bounceHost})`
+        ) || changed;
+    } else if (isClientRedirect && isCrossSite) {
+      changed =
+        addHijackIndicator(
+          tabData,
+          "Redirecionamento automático",
+          `${bounceDomain} -> ${newDomain}`
+        ) || changed;
+    }
+  }
+
+  if (changed) {
     await saveTabData(details.tabId, tabData);
   }
 });
