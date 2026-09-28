@@ -88,6 +88,7 @@ async function showReport() {
     cookiePersistent.textContent = cookieStats.persistent;
   }
 
+  renderBlockedRequests(tabData);
   renderScore(tabData);
 
   status.hidden = true;
@@ -118,4 +119,105 @@ function renderScore(tabData) {
   }
 }
 
+function renderBlockedRequests(tabData) {
+  const blockedRequests = tabData.blockedRequests ?? {};
+  const blockedList = document.getElementById("blocked-list");
+  let total = 0;
+
+  for (const [domain, count] of Object.entries(blockedRequests).sort()) {
+    total += count;
+
+    const item = document.createElement("li");
+    item.textContent = `${domain}: ${count}`;
+    blockedList.appendChild(item);
+  }
+
+  document.getElementById("blocked-total").textContent = total;
+}
+
+function normalizeDomain(input) {
+  let value = input.trim().toLowerCase();
+
+  // Aceita URLs completas, mantendo apenas o hostname.
+  if (value.includes("://")) {
+    try {
+      value = new URL(value).hostname;
+    } catch {
+      return null;
+    }
+  }
+
+  value = value.replace(/^\*\./, "").replace(/\/.*$/, "");
+
+  const isValid = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(value);
+
+  return isValid ? value : null;
+}
+
+async function getBlocklist() {
+  const stored = await browser.storage.local.get("blocklist");
+  return Array.isArray(stored.blocklist) ? stored.blocklist : [];
+}
+
+async function renderBlocklist() {
+  const list = document.getElementById("blocklist");
+  const blocklist = await getBlocklist();
+
+  list.replaceChildren();
+
+  for (const domain of blocklist) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    const removeButton = document.createElement("button");
+
+    label.textContent = domain;
+    removeButton.textContent = "Remover";
+    removeButton.addEventListener("click", async () => {
+      const current = await getBlocklist();
+
+      await browser.storage.local.set({
+        blocklist: current.filter((entry) => entry !== domain)
+      });
+
+      renderBlocklist();
+    });
+
+    item.append(label, " ", removeButton);
+    list.appendChild(item);
+  }
+}
+
+function setupBlocklistForm() {
+  const form = document.getElementById("blocklist-form");
+  const input = document.getElementById("blocklist-input");
+  const error = document.getElementById("blocklist-error");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const domain = normalizeDomain(input.value);
+
+    if (!domain) {
+      error.textContent = "Domínio inválido.";
+      error.hidden = false;
+      return;
+    }
+
+    error.hidden = true;
+
+    const current = await getBlocklist();
+
+    if (!current.includes(domain)) {
+      current.push(domain);
+      current.sort();
+      await browser.storage.local.set({ blocklist: current });
+    }
+
+    input.value = "";
+    renderBlocklist();
+  });
+}
+
+setupBlocklistForm();
+renderBlocklist();
 showReport();

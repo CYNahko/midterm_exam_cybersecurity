@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Privacy Inspector",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Detecta possíveis rastreadores e mecanismos de armazenamento em páginas web.",
     "action":{
         "default_title": "Privacy Inspector",
@@ -9,6 +9,7 @@
     },
     "permissions": [
         "webRequest",
+        "webRequestBlocking",
         "publicSuffix",
         "storage"
     ],

@@ -107,6 +107,38 @@
         <strong id="cookie-persistent">0</strong>
       </li>
     </ul>
+
+    <h2>Requisições bloqueadas nesta página</h2>
+
+    <p>
+      Total:
+      <strong id="blocked-total">0</strong>
+    </p>
+
+    <ul id="blocked-list"></ul>
+  </section>
+
+  <section id="blocklist-section">
+    <h2>Lista de bloqueio personalizada</h2>
+
+    <form id="blocklist-form">
+      <input
+        id="blocklist-input"
+        type="text"
+        placeholder="ex.: doubleclick.net"
+        autocomplete="off"
+      >
+      <button type="submit">Adicionar</button>
+    </form>
+
+    <p id="blocklist-error" class="error" hidden></p>
+
+    <ul id="blocklist"></ul>
+
+    <p class="hint">
+      Domínios bloqueados incluem seus subdomínios. Atualize a página para
+      aplicar as mudanças.
+    </p>
   </section>
 
   <script src="score.js"></script>

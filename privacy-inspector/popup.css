@@ -42,3 +42,22 @@ h2 {
   border-bottom: 1px solid #dadce0;
   text-align: left;
 }
+
+#blocklist-form {
+  display: flex;
+  gap: 6px;
+}
+
+#blocklist-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.error {
+  color: #c5221f;
+}
+
+.hint {
+  font-size: 12px;
+  color: #5f6368;
+}

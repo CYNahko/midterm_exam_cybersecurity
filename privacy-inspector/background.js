@@ -43,7 +43,7 @@ async function saveTabData(tabId, tabData) {
   });
 }
 
-async function handleRequest(request) {
+async function handleRequest(request, blocked = false) {
   if (request.tabId < 0) {
     return;
   }
@@ -82,24 +82,76 @@ async function handleRequest(request) {
     return;
   }
 
+  let changed = false;
+
   const isThirdParty = requestDomain !== tabData.pageDomain;
   const isNewDomain = !tabData.thirdPartyDomains.includes(requestDomain);
 
   if (isThirdParty && isNewDomain) {
     tabData.thirdPartyDomains.push(requestDomain);
     tabData.thirdPartyDomains.sort();
+    changed = true;
+  }
 
+  if (blocked) {
+    if (!tabData.blockedRequests) {
+      tabData.blockedRequests = {};
+    }
+
+    tabData.blockedRequests[requestDomain] =
+      (tabData.blockedRequests[requestDomain] ?? 0) + 1;
+    changed = true;
+  }
+
+  if (changed) {
     await saveTabData(request.tabId, tabData);
   }
 }
 
+// Lista de bloqueio personalizada, mantida em storage.local e editada pelo popup.
+let blocklist = [];
+
+async function loadBlocklist() {
+  const stored = await browser.storage.local.get("blocklist");
+  blocklist = Array.isArray(stored.blocklist) ? stored.blocklist : [];
+}
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.blocklist) {
+    blocklist = changes.blocklist.newValue ?? [];
+  }
+});
+
+loadBlocklist();
+
+// Um domínio da lista bloqueia também todos os seus subdomínios.
+function isBlocked(url) {
+  let hostname;
+
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+
+  return blocklist.some(
+    (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+  );
+}
+
 browser.webRequest.onBeforeRequest.addListener(
   (request) => {
-    handleRequest(request);
+    // O documento principal nunca é bloqueado, para não impedir a navegação.
+    const blocked = request.type !== "main_frame" && isBlocked(request.url);
+
+    handleRequest(request, blocked);
+
+    return { cancel: blocked };
   },
   {
     urls: ["<all_urls>"]
-  }
+  },
+  ["blocking"]
 );
 
 browser.tabs.onRemoved.addListener((tabId) => {
