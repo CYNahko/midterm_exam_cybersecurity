@@ -348,6 +348,26 @@ O G1 apresentou a maior quantidade de requisições e domínios de terceiros, en
 
 \section{Limitações e divergências}
 
+Os testes realizados evidenciaram que os resultados do Privacy Inspector dependem do escopo específico de sua coleta. A extensão identifica conexões com domínios de terceiros, mas essa classificação não significa necessariamente que o domínio seja um rastreador. Serviços legítimos, como redes de distribuição de conteúdo, fontes, APIs e recursos pertencentes à mesma organização, também podem ser classificados como terceiros quando possuem um domínio registrável diferente daquele da página principal.
+
+A contagem de cookies considera apenas cabeçalhos HTTP \texttt{Set-Cookie} observados durante o carregamento. Cookies criados diretamente por JavaScript não são contabilizados, assim como cookies previamente armazenados e apenas enviados pelo navegador. Além disso, um mesmo cookie pode ser redefinido várias vezes. Essa diferença de escopo explica parte das divergências entre o plugin e os registros presentes nos arquivos HAR.
+
+A inspeção de armazenamento HTML5 representa o documento principal da página. A implementação contabiliza itens presentes em \texttt{localStorage} e \texttt{sessionStorage}, além dos bancos IndexedDB disponíveis, mas não detalha o armazenamento utilizado individualmente por iframes de terceiros. Também não cobre mecanismos como Cache API, WebSQL, CookieStore, Service Workers, memória, histórico e \texttt{window.name}.
+
+O Privacy Inspector não monitora atualmente o acesso a APIs utilizadas na construção de impressões digitais, como Canvas, WebGL, Navigator e Screen. Por essa razão, as operações executadas nas páginas de fingerprinting foram observadas apenas indiretamente, por meio de armazenamento, cookies e conexões de rede, sem uma classificação específica da atividade.
+
+Também foram observadas diferenças relacionadas ao momento da coleta. Páginas dinâmicas podem continuar realizando requisições depois da exportação do HAR ou da abertura do popup. No YouTube, o HAR identificou uma requisição associada ao domínio \texttt{googleapis.com} que não foi apresentada pelo plugin, possivelmente devido ao momento da inicialização do monitoramento ou ao uso de recursos previamente armazenados pelo navegador.
+
+Por segurança, os arquivos HAR publicados no repositório foram sanitizados. Valores de cookies, identificadores, endereços IP, chaves de API, assinaturas e conteúdos enviados em requisições foram substituídos, enquanto os domínios, métodos, códigos de resposta e demais metadados necessários à análise foram preservados.
+
 \section{Conclusão}
+
+O desenvolvimento do Privacy Inspector demonstrou a aplicação das APIs de extensões do Firefox na observação de comportamentos relacionados à privacidade durante a navegação. A extensão foi capaz de identificar domínios de terceiros únicos, registrar cookies definidos por respostas HTTP e apresentar o uso de \texttt{localStorage}, \texttt{sessionStorage} e IndexedDB.
+
+Nas DuckDuckGo Privacy Test Pages, o plugin detectou as conexões utilizadas nos testes de Tracker Reporting, inclusive aquelas criadas dinamicamente ou após um atraso. O teste de Storage Blocking confirmou a detecção dos três mecanismos HTML5 implementados. Por outro lado, os testes de fingerprinting demonstraram que atividades baseadas em APIs do navegador podem ocorrer sem cookies ou conexões de terceiros, não sendo explicitamente identificadas pela versão atual da extensão.
+
+A análise dos sites reais mostrou diferentes perfis de comportamento. O G1 apresentou a maior quantidade de requisições e domínios de terceiros, a UBC apresentou menor utilização de armazenamento HTML5 e o YouTube destacou-se pela presença de dez bancos IndexedDB. A comparação com os arquivos HAR confirmou a maior parte das contagens de domínios do plugin e permitiu explicar divergências relacionadas a cookies, bloqueios do navegador, recursos armazenados e limites temporais da coleta.
+
+Portanto, o Privacy Inspector atende ao objetivo de fornecer uma visão acessível dos principais domínios, cookies e mecanismos de armazenamento utilizados durante o carregamento de uma página. Ao mesmo tempo, os testes indicam oportunidades de evolução, como a integração com listas conhecidas de rastreadores, a inspeção de armazenamento em iframes e a interceptação de APIs associadas a fingerprinting.
 
 \end{document}
