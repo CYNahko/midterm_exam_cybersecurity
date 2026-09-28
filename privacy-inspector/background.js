@@ -43,6 +43,81 @@ async function saveTabData(tabId, tabData) {
   });
 }
 
+function createTabData(pageDomain) {
+  return {
+    pageDomain,
+    startedAt: Date.now(),
+    thirdPartyDomains: [],
+    cookieStats: {
+      total: 0,
+      firstParty: 0,
+      thirdParty: 0,
+      session: 0,
+      persistent: 0
+    },
+    canvasFingerprint: {
+      detected: false,
+      totalCalls: 0,
+      methods: {}
+    },
+    hijackIndicators: [],
+    pollingCounts: {}
+  };
+}
+
+// Indicadores de hijacking/hook. Cada combinação tipo + detalhe é registrada
+// uma única vez por página.
+function addHijackIndicator(tabData, type, detail) {
+  if (!tabData.hijackIndicators) {
+    tabData.hijackIndicators = [];
+  }
+
+  const exists = tabData.hijackIndicators.some(
+    (indicator) => indicator.type === type && indicator.detail === detail
+  );
+
+  if (exists) {
+    return false;
+  }
+
+  tabData.hijackIndicators.push({ type, detail });
+  return true;
+}
+
+// Requisições XHR/fetch repetidas ao mesmo terceiro depois do carregamento
+// inicial indicam polling persistente (canal de comando e controle, como no BeEF).
+const POLLING_GRACE_PERIOD_MS = 10000;
+const POLLING_THRESHOLD = 5;
+
+function checkPolling(tabData, request, requestDomain) {
+  if (request.type !== "xmlhttprequest") {
+    return false;
+  }
+
+  const elapsed = Date.now() - (tabData.startedAt ?? Date.now());
+
+  if (elapsed < POLLING_GRACE_PERIOD_MS) {
+    return false;
+  }
+
+  if (!tabData.pollingCounts) {
+    tabData.pollingCounts = {};
+  }
+
+  const count = (tabData.pollingCounts[requestDomain] ?? 0) + 1;
+  tabData.pollingCounts[requestDomain] = count;
+
+  if (count === POLLING_THRESHOLD) {
+    addHijackIndicator(
+      tabData,
+      "Polling persistente para terceiro",
+      `${requestDomain} (${count}+ requisições após ${POLLING_GRACE_PERIOD_MS / 1000}s)`
+    );
+  }
+
+  return true;
+}
+
 async function handleRequest(request, blocked = false) {
   if (request.tabId < 0) {
     return;
@@ -55,22 +130,11 @@ async function handleRequest(request, blocked = false) {
   }
 
   if (request.type === "main_frame") {
-    const tabData = {
-      pageDomain: requestDomain,
-      thirdPartyDomains: [],
-      cookieStats: {
-        total: 0,
-        firstParty: 0,
-        thirdParty: 0,
-        session: 0,
-        persistent: 0
-      },
-      canvasFingerprint: {
-        detected: false,
-        totalCalls: 0,
-        methods: {}
-      }
-    };
+    const previousData = await getTabData(request.tabId);
+    const tabData = createTabData(requestDomain);
+
+    // Guardado para detectar redirecionamentos automáticos (webNavigation).
+    tabData.previousPageDomain = previousData?.pageDomain ?? null;
 
     await saveTabData(request.tabId, tabData);
     return;
@@ -90,6 +154,15 @@ async function handleRequest(request, blocked = false) {
   if (isThirdParty && isNewDomain) {
     tabData.thirdPartyDomains.push(requestDomain);
     tabData.thirdPartyDomains.sort();
+    changed = true;
+  }
+
+  if (isThirdParty && request.type === "websocket") {
+    addHijackIndicator(tabData, "WebSocket para terceiro", requestDomain);
+    changed = true;
+  }
+
+  if (isThirdParty && checkPolling(tabData, request, requestDomain)) {
     changed = true;
   }
 
@@ -169,22 +242,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   let tabData = await getTabData(tabId);
 
   if (!tabData) {
-    tabData = {
-      pageDomain: getDomain(sender.url),
-      thirdPartyDomains: [],
-      cookieStats: {
-        total: 0,
-        firstParty: 0,
-        thirdParty: 0,
-        session: 0,
-        persistent: 0
-      },
-      canvasFingerprint: {
-        detected: false,
-        totalCalls: 0,
-        methods: {}
-      }
-    };
+    tabData = createTabData(getDomain(sender.url));
   }
 
   if (message.type === "STORAGE_REPORT") {
@@ -208,6 +266,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     tabData.canvasFingerprint.totalCalls += 1;
     tabData.canvasFingerprint.methods[api] =
       (tabData.canvasFingerprint.methods[api] ?? 0) + 1;
+  } else if (message.type === "HOOK_INDICATOR") {
+    if (!handleHookIndicator(tabData, message)) {
+      return;
+    }
   } else {
     return;
   }
@@ -280,3 +342,91 @@ browser.webRequest.onHeadersReceived.addListener(
   },
   ["responseHeaders"]
 );
+
+// Mensagens do hook-detector.js (contexto da página, repassadas pelo content script).
+function handleHookIndicator(tabData, message) {
+  if (message.kind === "global-override") {
+    const name = message.name;
+
+    if (typeof name !== "string" || name.length > 100) {
+      return false;
+    }
+
+    return addHijackIndicator(tabData, "Objeto global sobrescrito", name);
+  }
+
+  if (message.kind === "window-open") {
+    const targetDomain = getDomain(message.url);
+
+    // Abrir uma página do próprio site (ex.: about:blank ou mesmo domínio) não conta.
+    if (!targetDomain || targetDomain === tabData.pageDomain) {
+      return false;
+    }
+
+    return addHijackIndicator(
+      tabData,
+      "Nova aba/janela aberta pela página",
+      targetDomain
+    );
+  }
+
+  return false;
+}
+
+// Abas ou janelas criadas a partir de uma página (window.open, target=_blank,
+// pop-unders). O plugin não distingue um clique legítimo de um abuso, apenas
+// sinaliza quando o destino é outro domínio.
+browser.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
+  const tabData = await getTabData(details.sourceTabId);
+  const targetDomain = getDomain(details.url);
+
+  if (!tabData || !targetDomain || targetDomain === tabData.pageDomain) {
+    return;
+  }
+
+  const added = addHijackIndicator(
+    tabData,
+    "Nova aba/janela aberta pela página",
+    targetDomain
+  );
+
+  if (added) {
+    await saveTabData(details.sourceTabId, tabData);
+  }
+});
+
+// Redirecionamentos feitos pelo cliente (JavaScript ou meta refresh) para outro
+// domínio. Redirecionamentos HTTP (3xx) não são contados, pois são comuns em
+// casos legítimos como http -> https.
+browser.webNavigation.onCommitted.addListener(async (details) => {
+  if (details.frameId !== 0) {
+    return;
+  }
+
+  const qualifiers = details.transitionQualifiers ?? [];
+
+  if (!qualifiers.includes("client_redirect")) {
+    return;
+  }
+
+  const tabData = await getTabData(details.tabId);
+  const newDomain = getDomain(details.url);
+
+  if (
+    !tabData ||
+    !tabData.previousPageDomain ||
+    tabData.previousPageDomain === newDomain
+  ) {
+    return;
+  }
+
+  const added = addHijackIndicator(
+    tabData,
+    "Redirecionamento automático",
+    `${tabData.previousPageDomain} -> ${newDomain}`
+  );
+
+  if (added) {
+    await saveTabData(details.tabId, tabData);
+  }
+});

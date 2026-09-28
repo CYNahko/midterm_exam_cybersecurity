@@ -58,6 +58,20 @@ window.addEventListener("message", (event) => {
   const message = event.data;
 
   if (
+    message &&
+    message.source === "privacy-inspector-hook" &&
+    message.type === "HOOK_INDICATOR"
+  ) {
+    browser.runtime.sendMessage({
+      type: "HOOK_INDICATOR",
+      kind: message.kind,
+      name: message.name,
+      url: message.url
+    });
+    return;
+  }
+
+  if (
     !message ||
     message.source !== "privacy-inspector-canvas" ||
     message.type !== "CANVAS_API_CALL" ||

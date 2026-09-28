@@ -89,6 +89,7 @@ async function showReport() {
   }
 
   renderBlockedRequests(tabData);
+  renderHijackIndicators(tabData);
   renderScore(tabData);
 
   status.hidden = true;
@@ -116,6 +117,19 @@ function renderScore(tabData) {
 
     row.append(label, value, penalty);
     breakdownBody.appendChild(row);
+  }
+}
+
+function renderHijackIndicators(tabData) {
+  const indicators = tabData.hijackIndicators ?? [];
+  const list = document.getElementById("hijack-list");
+
+  document.getElementById("hijack-total").textContent = indicators.length;
+
+  for (const indicator of indicators) {
+    const item = document.createElement("li");
+    item.textContent = `${indicator.type}: ${indicator.detail}`;
+    list.appendChild(item);
   }
 }
 
