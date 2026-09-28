@@ -88,8 +88,34 @@ async function showReport() {
     cookiePersistent.textContent = cookieStats.persistent;
   }
 
+  renderScore(tabData);
+
   status.hidden = true;
   report.hidden = false;
+}
+
+function renderScore(tabData) {
+  const result = calculatePrivacyScore(tabData);
+  const breakdownBody = document.getElementById("score-breakdown");
+
+  document.getElementById("score-value").textContent = result.score;
+  document.getElementById("score-grade").textContent = result.grade;
+
+  for (const item of result.breakdown) {
+    const row = document.createElement("tr");
+
+    const label = document.createElement("td");
+    label.textContent = `${item.label} (peso ${item.weight})`;
+
+    const value = document.createElement("td");
+    value.textContent = `${item.value} / ${item.limit}`;
+
+    const penalty = document.createElement("td");
+    penalty.textContent = `-${item.penalty}`;
+
+    row.append(label, value, penalty);
+    breakdownBody.appendChild(row);
+  }
 }
 
 showReport();
