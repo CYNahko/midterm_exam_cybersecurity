@@ -152,6 +152,7 @@ async function handleRequest(request, blocked = false) {
     tabData.previousHostname = previousData?.hostname ?? null;
     tabData.previousStartedAt = previousData?.startedAt ?? null;
     tabData.originDomain = previousData?.previousPageDomain ?? null;
+    tabData.originHostname = previousData?.previousHostname ?? null;
 
     await saveTabData(request.tabId, tabData);
     return;
@@ -420,6 +421,11 @@ browser.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
 // redirecionamento seguinte seja considerado um "salto" (bounce).
 const BOUNCE_MAX_DWELL_MS = 10000;
 
+// Nem sempre o Firefox marca a navigação feita por JavaScript como
+// "client_redirect". Uma página que o usuário deixa em menos de 2 segundos
+// dificilmente foi lida por ele, então a saída é tratada como automática.
+const QUICK_EXIT_MS = 2000;
+
 // Parâmetros de URL usados por plataformas de anúncios para identificar o
 // clique ou o usuário (mesma categoria testada na página Query Parameters do DDG).
 const TRACKING_PARAMS = new Set([
@@ -563,23 +569,30 @@ browser.webNavigation.onCommitted.addListener(async (details) => {
   const bounceHost = tabData.previousHostname;
   const newHost = new URL(details.url).hostname;
 
-  if (isRedirect && bounceDomain && bounceHost !== newHost) {
-    const dwell = tabData.startedAt - (tabData.previousStartedAt ?? 0);
+  const dwell = tabData.startedAt - (tabData.previousStartedAt ?? 0);
+  const isQuickExit = tabData.previousStartedAt !== null && dwell <= QUICK_EXIT_MS;
+
+  if ((isRedirect || isQuickExit) && bounceDomain && bounceHost !== newHost) {
     const origin = tabData.originDomain;
+    const originHost = tabData.originHostname;
     const isCrossSite = bounceDomain !== newDomain;
     const carriesId = findIdParam(details.url) !== null;
 
+    // A origem precisa ser outro site em relação à página intermediária; se
+    // for outro subdomínio do mesmo site, exige-se um ID na URL de destino.
+    const originDiffers =
+      origin && (origin !== bounceDomain || (carriesId && originHost !== bounceHost));
+
     if (
       dwell <= BOUNCE_MAX_DWELL_MS &&
-      origin &&
-      origin !== bounceDomain &&
+      originDiffers &&
       (isCrossSite || carriesId)
     ) {
       changed =
         addSyncIndicator(
           tabData,
           "Bounce tracking",
-          `${origin} -> ${bounceHost} -> ${newHost} (${Math.round(dwell / 100) / 10}s em ${bounceHost})`
+          `${originHost ?? origin} -> ${bounceHost} -> ${newHost} (${Math.round(dwell / 100) / 10}s em ${bounceHost})`
         ) || changed;
     } else if (isClientRedirect && isCrossSite) {
       changed =
