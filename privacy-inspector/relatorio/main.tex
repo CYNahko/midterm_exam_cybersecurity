@@ -1,4 +1,4 @@
-\documentclass[12pt,a4paper]{article}
+\documentclass[11pt,a4paper]{article}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -8,366 +8,474 @@
 \usepackage{array}
 \usepackage{float}
 \usepackage{geometry}
-\usepackage[hidelinks]{hyperref}
 \usepackage{longtable}
+\usepackage{url}
+\usepackage{amsmath}
+% Permite quebrar texto monoespaçado (domínios) após pontos e barras.
+\renewcommand{\UrlBreaks}{\do\.\do\/\do\-\do\_}
+\usepackage[hidelinks]{hyperref}
 
-\geometry{
-    top=2.5cm,
-    bottom=2.5cm,
-    left=3cm,
-    right=3cm
-}
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+% Figura com largura relativa e altura máxima, mantendo a proporção.
+\newcommand{\evid}[3]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=#2\textwidth,height=0.72\textheight,keepaspectratio]{#1}
+    \caption{#3}
+  \end{figure}}
+
+% Três capturas do popup lado a lado.
+\newcommand{\popups}[4]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=0.31\textwidth]{#1}\hfill
+    \includegraphics[width=0.31\textwidth]{#2}\hfill
+    \includegraphics[width=0.31\textwidth]{#3}
+    \caption{#4}
+  \end{figure}}
+
+% Duas capturas lado a lado.
+\newcommand{\pair}[3]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=0.62\textwidth,height=0.4\textheight,keepaspectratio]{#1}\hfill
+    \includegraphics[width=0.3\textwidth,height=0.4\textheight,keepaspectratio]{#2}
+    \caption{#3}
+  \end{figure}}
+
+\newcommand{\ok}{sim}
+\newcommand{\no}{não}
 
 \title{
     Privacy Inspector:\\
     Detecção e Análise de Rastreadores e Mecanismos de Armazenamento no Firefox
 }
-
-\author{
-    Cynthia Naoko Yasutake\\
-    Insper
-}
-
+\author{Cynthia Naoko Yasutake\\Insper}
 \date{Setembro de 2026}
 
 \begin{document}
+\sloppy
 
 \maketitle
 
 \section{Introdução}
 
-Este relatório apresenta o desenvolvimento e a validação do Privacy Inspector, uma extensão para o navegador Mozilla Firefox destinada à identificação de conexões com domínios de terceiros, cookies definidos durante o carregamento e mecanismos de armazenamento HTML5 utilizados por páginas web.
+Este relatório apresenta o desenvolvimento e a validação do Privacy Inspector, uma extensão para o Mozilla Firefox que identifica, por aba, conexões com domínios de terceiros, cookies definidos durante o carregamento, uso de armazenamento HTML5, canvas fingerprinting, bounce tracking e cookie sync, indicadores de sequestro de navegador (hijacking e hook) e atribui à página uma pontuação de privacidade com metodologia explícita. A extensão também permite ao usuário manter uma lista de bloqueio personalizada.
 
-\section{Metodologia do plugin}
+A validação foi feita em duas frentes: nas DuckDuckGo Privacy Test Pages, que oferecem cenários padronizados com resultado esperado conhecido, e em três sites reais (G1, University of British Columbia e YouTube), cujos resultados foram comparados com os arquivos HAR exportados do DevTools, com o relatório do Blacklight (The Markup) e com os bloqueios do uBlock Origin. O código, as instruções de instalação e todas as evidências estão no repositório, na pasta \path{privacy-inspector/relatorio/evidencias/}.
 
-O Privacy Inspector foi desenvolvido como uma extensão WebExtension para o Mozilla Firefox, utilizando o Manifest V3. A solução é composta por um script de background, um content script e uma interface apresentada por meio do popup da extensão. Essa separação permite que o monitoramento de rede seja mantido independentemente da abertura do popup, enquanto a inspeção de recursos pertencentes ao contexto da página é realizada pelo content script.
+\section{Arquitetura e metodologia do plugin}
 
-As requisições de rede são observadas pelo script de background por meio da API \texttt{webRequest}. Ao iniciar o carregamento de uma página, a extensão registra o domínio principal da aba. Para cada requisição subsequente, o domínio registrável é obtido com a API \texttt{publicSuffix}, considerando o domínio efetivo de nível superior acrescido de um componente, ou eTLD+1. Uma conexão é classificada como de terceira parte quando o domínio registrável do recurso solicitado é diferente do domínio registrável da página principal. Os domínios identificados são armazenados sem duplicatas e apresentados no popup como domínios de terceiros únicos.
+O Privacy Inspector é uma WebExtension em Manifest V3 composta pelos seguintes arquivos:
 
-Os cookies definidos durante o carregamento são identificados pela inspeção dos cabeçalhos HTTP \texttt{Set-Cookie} recebidos pela API \texttt{webRequest.onHeadersReceived}. A classificação entre primeira e terceira parte considera o domínio da resposta que definiu o cookie em relação ao domínio principal da página. Cookies que apresentam os atributos \texttt{Expires} ou \texttt{Max-Age} são classificados como persistentes, enquanto aqueles que não apresentam nenhum desses atributos são classificados como cookies de sessão. A contagem representa eventos de definição de cookies em respostas HTTP, não a quantidade total de cookies previamente armazenados no navegador.
+\begin{itemize}
+  \item \texttt{background.\allowbreak{}js}: monitora a rede com a API \texttt{webRequest} e a navegação com a API \texttt{webNavigation}, mantém os dados de cada aba em \texttt{storage.\allowbreak{}session} e aplica a lista de bloqueio;
+  \item \texttt{content-script.\allowbreak{}js}: executa no contexto isolado da extensão, inspeciona o armazenamento HTML5 e repassa ao background as mensagens dos detectores que rodam no contexto da página;
+  \item \texttt{canvas-detector.\allowbreak{}js} e \texttt{hook-detector.\allowbreak{}js}: executam no contexto da própria página (\texttt{world: MAIN}) em \texttt{document\_start}, antes dos scripts do site;
+  \item \texttt{score.\allowbreak{}js}: implementa a pontuação de privacidade;
+  \item \texttt{popup.\allowbreak{}html}, \texttt{popup.\allowbreak{}js} e \texttt{popup.\allowbreak{}css}: apresentam o relatório da aba ativa e a lista de bloqueio.
+\end{itemize}
 
-A identificação do armazenamento HTML5 é realizada por um content script executado no contexto do documento principal. O script verifica a quantidade de itens presentes em \texttt{localStorage} e \texttt{sessionStorage}, além de consultar os bancos disponíveis no IndexedDB. Os resultados são enviados ao script de background pelo mecanismo de mensagens da WebExtensions API. Os dados coletados são organizados por aba e mantidos em \texttt{storage.session}, permitindo que o popup recupere o relatório correspondente à página ativa.
+\subsection{Domínios de terceiros}
 
-A interface do Privacy Inspector apresenta o domínio principal, a quantidade e a lista de domínios terceiros únicos, a utilização dos três mecanismos de armazenamento HTML5 e a distribuição dos cookies observados. A metodologia possui limitações conhecidas: um domínio terceiro não é necessariamente um rastreador ou uma organização externa; cookies criados diretamente por JavaScript não são contabilizados pela inspeção de \texttt{Set-Cookie}; e a análise de armazenamento representa o documento principal, sem detalhar individualmente o estado de cada iframe de terceiro. Essas limitações são consideradas na análise das divergências observadas durante a validação.
+A cada novo carregamento do documento principal, o plugin registra o domínio registrável da página (eTLD+1, obtido com a API \texttt{publicSuffix}). Toda requisição subsequente da aba cujo domínio registrável difere do da página é contada como de terceira parte. Como a lista de sufixos públicos inclui domínios privados como \texttt{googleapis.\allowbreak{}com}, subdomínios como \texttt{fonts.\allowbreak{}googleapis.\allowbreak{}com} e \texttt{ajax.\allowbreak{}googleapis.\allowbreak{}com} aparecem como domínios registráveis distintos.
+
+\subsection{Cookies}
+
+Os cookies são identificados pelos cabeçalhos \texttt{Set-Cookie} recebidos em \path{webRequest.onHeadersReceived}. São de primeira parte quando a resposta pertence ao domínio da página e de terceira parte caso contrário; são persistentes quando possuem \texttt{Expires} ou \texttt{Max-Age} e de sessão caso contrário. A contagem representa eventos de definição, de modo que um mesmo cookie redefinido várias vezes é contado mais de uma vez. Cookies criados por \texttt{document.\allowbreak{}cookie} não são contabilizados.
+
+\subsection{Armazenamento HTML5}
+
+O content script conta os itens de \texttt{localStorage} e \texttt{sessionStorage} e os bancos retornados por \texttt{indexedDB.\allowbreak{}databases()} no documento principal, cerca de um segundo após o início do carregamento.
+
+\subsection{Canvas fingerprinting}
+
+O \texttt{canvas-detector.\allowbreak{}js} substitui, no protótipo, os métodos de leitura de canvas usados para gerar impressões digitais: \texttt{HTMLCanvasElement.\allowbreak{}toDataURL}, \texttt{HTMLCanvasElement.\allowbreak{}toBlob}, \texttt{CanvasRenderingContext2D.\allowbreak{}getImageData}, \texttt{OffscreenCanvas.\allowbreak{}convertToBlob} e \texttt{OffscreenCanvas.\allowbreak{}transferToImageBitmap}. Cada chamada é repassada à função original e registrada por método.
+
+\subsection{Bounce tracking, cookie sync e parâmetros de rastreamento}
+
+Três mecanismos são observados:
+\begin{itemize}
+  \item \textbf{Bounce tracking}: uma navegação A $\rightarrow$ X $\rightarrow$ B em que X é outro site em relação a A, permanece aberto por menos de 10 segundos e sai de forma automática, seja por redirecionamento HTTP, seja por JavaScript (indicado pelo \texttt{transitionQualifier} do Firefox ou por uma permanência inferior a 2 segundos). Quando B é outro subdomínio do mesmo site que X, exige-se que a URL de B carregue um parâmetro com aparência de identificador, para não confundir o bounce com redirecionamentos comuns como \texttt{example.\allowbreak{}com} $\rightarrow$ \texttt{www.\allowbreak{}example.\allowbreak{}com};
+  \item \textbf{Cookie sync}: um redirecionamento de sub-recurso (em geral um pixel) entre dois domínios de terceiros diferentes, levando um identificador na URL;
+  \item \textbf{Parâmetros de rastreamento} na URL da página, como \texttt{utm\_*}, \texttt{fbclid}, \texttt{gclid} e \texttt{msclkid}.
+\end{itemize}
+
+\subsection{Indicadores de hijacking e hook}
+
+O plugin registra como indicadores de hijacking: WebSocket aberto para domínio de terceiro; polling persistente, definido como cinco ou mais requisições XHR/fetch para o mesmo terceiro após os primeiros 10 segundos da página; abertura de nova aba ou janela pela página para outro domínio (\texttt{window.\allowbreak{}open} e \path{webNavigation.onCreatedNavigationTarget}), que cobre casos de pop-under; redirecionamento automático para outro domínio sem o padrão de bounce; e sobrescrita de objetos globais. Para este último, o \texttt{hook-detector.\allowbreak{}js} guarda as referências nativas de \texttt{fetch}, \texttt{XMLHttpRequest.\allowbreak{}prototype.\allowbreak{}open/\allowbreak{}send}, \texttt{WebSocket}, \texttt{navigator.\allowbreak{}sendBeacon}, \texttt{document.\allowbreak{}write}, \texttt{EventTarget.\allowbreak{}prototype.\allowbreak{}addEventListener} e \texttt{window.\allowbreak{}open} antes de qualquer script da página e as compara 1, 5, 15 e 30 segundos após o evento \texttt{load}. Esses são os pontos de interceptação usados por frameworks de hook como o BeEF.
+
+\subsection{Lista de bloqueio personalizada}
+
+O usuário adiciona domínios no popup, e a lista é salva em \texttt{storage.\allowbreak{}local}. O listener de \path{webRequest.onBeforeRequest}, registrado como \texttt{blocking} com a permissão \texttt{webRequestBlocking}, cancela requisições para os domínios da lista e seus subdomínios, exceto o documento principal. As requisições canceladas aparecem no popup por domínio.
+
+\subsection{Condições de coleta}
+
+As coletas finais foram feitas em 28/09/2026, no Firefox 156 para Windows, em janela privada nova para cada site, sem aceitar banners de consentimento e com o uBlock Origin desativado. A proteção contra rastreamento do Firefox (ETP) permaneceu na configuração padrão da janela privada, que bloqueia conteúdo de rastreamento conhecido; seus bloqueios aparecem nos HARs como requisições com status 0 e são considerados na análise. O uBlock Origin foi ativado apenas nas coletas específicas do seu logger. O Blacklight foi executado na versão desktop, a partir de servidores na Califórnia (parâmetro \texttt{location=us-ca}).
+
+Os HARs publicados foram sanitizados: valores de cookies, cabeçalhos \texttt{Cookie} e \texttt{Referer}, corpos de requisição e de resposta e parâmetros de URL com aparência de identificador foram substituídos por \texttt{REDACTED}, preservando domínios, caminhos, métodos, códigos de status e nomes de cookies. Os HARs brutos não são versionados. Os arquivos \texttt{*-etp.\allowbreak{}sanitized.\allowbreak{}har} correspondem à coleta inicial, de 27/09, feita em janela normal e com uma versão anterior do plugin.
 
 \section{DuckDuckGo Privacy Test Pages}
 
-A validação do Privacy Inspector foi realizada com as DuckDuckGo Privacy Test Pages, uma coleção padronizada de páginas destinadas à avaliação de mecanismos de privacidade e segurança em navegadores e extensões. Conforme os critérios da avaliação, foram consideradas as categorias Tracker Reporting, Storage Blocking e Fingerprinting/Canvas para a cobertura mínima do conceito C. Os testes adicionais relacionados a Tracker Blocking, Storage Partitioning, Bounce Tracking e Query Parameters foram organizados separadamente por corresponderem aos requisitos dos conceitos superiores.
-
-Para cada caso, a página de teste foi aberta no Firefox e atualizada para iniciar uma nova coleta por aba. Nos testes que criavam requisições de forma atrasada, aguardou-se o intervalo indicado pela própria página antes da abertura do popup. Nos testes interativos, como Storage Blocking, as ações de armazenamento e recuperação foram executadas na ordem apresentada pela página. Após a conclusão de cada procedimento, o popup do Privacy Inspector foi aberto e seu resultado foi registrado por meio de captura de tela, mantendo visíveis a URL, a descrição ou o resultado esperado da página e o relatório produzido pela extensão.
-
-Os resultados foram organizados em tabelas contendo o teste executado, o comportamento esperado reportado pela página, o resultado observado no Privacy Inspector e a explicação técnica das divergências. A comparação considera que as páginas do DuckDuckGo podem classificar explicitamente determinados domínios como rastreadores e distinguir o mecanismo responsável por uma requisição, enquanto a versão avaliada do Privacy Inspector apresenta inicialmente os domínios como terceiros, sem necessariamente associá-los a uma lista de rastreadores conhecidos.
-
-As divergências não foram avaliadas apenas pela diferença numérica entre os resultados. Foram considerados o momento em que a requisição ocorreu, o contexto de primeira ou terceira parte, o mecanismo utilizado para carregar o recurso, as limitações das APIs disponíveis à extensão e o escopo específico da coleta implementada. Cada resultado foi acompanhado de sua respectiva captura de tela, de modo a preservar evidências da página executada e do comportamento apresentado pelo plugin.
+Cada página foi aberta e, nos testes interativos, os passos indicados foram executados antes de abrir o popup. Nos testes com atraso, aguardou-se o tempo indicado pela página. As tabelas comparam o resultado reportado pela página com o observado no plugin e explicam cada divergência.
 
 \subsection{Tracker Reporting}
 
-Os testes de Tracker Reporting verificam se a extensão identifica conexões realizadas com domínios associados a rastreadores. A Tabela~\ref{tab:tracker-reporting} compara o comportamento esperado das páginas de teste com os resultados apresentados pelo Privacy Inspector.
-
 \small
-\begin{longtable}{|p{2.5cm}|p{2.7cm}|p{3.2cm}|p{4.8cm}|}
-
-\caption{Resultados dos testes de Tracker Reporting.}
-\label{tab:tracker-reporting} \\
-
+\begin{longtable}{|p{2.6cm}|p{3cm}|p{3.4cm}|p{5.0cm}|}
+\caption{Resultados de Tracker Reporting.}\\
 \hline
-\textbf{Teste} &
-\textbf{Esperado} &
-\textbf{Resultado do plugin} &
-\textbf{Explicação} \\ \hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
 \endfirsthead
-
 \hline
-\textbf{Teste} &
-\textbf{Esperado} &
-\textbf{Resultado do plugin} &
-\textbf{Explicação} \\ \hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
 \endhead
-
-Major tracker via script &
-Um major tracker carregado por script &
-Um domínio terceiro detectado: \texttt{doubleclick.net} &
-O plugin detectou a conexão, mas não classificou explicitamente o domínio como rastreador nem apresentou o tipo do recurso no popup. \\ \hline
-
-Major tracker via imagem &
-Um major tracker carregado por uma imagem &
-Um domínio terceiro detectado: \texttt{facebook.com}; um cookie de terceira parte e de sessão &
-O plugin identificou a conexão com o domínio terceiro e o cookie definido na resposta. Entretanto, não classificou explicitamente o domínio como rastreador nem apresentou no popup que o recurso era do tipo imagem. \\ \hline
-
-Major tracker com surrogate &
-Um major tracker com suporte a substituição por surrogate &
-Um domínio terceiro detectado: \texttt{doubleclick.net}; nenhum cookie ou armazenamento identificado &
-O plugin identificou a conexão com o domínio terceiro, mas não verifica se o script rastreador foi bloqueado ou substituído por um surrogate. Portanto, não é possível confirmar esse mecanismo somente com o relatório atual. \\ \hline
-
-Tracker via DocumentFragment &
-Uma requisição de rastreamento criada dinamicamente por um fragmento do documento &
-Um domínio terceiro detectado: \texttt{facebook.com}; um cookie de terceira parte e de sessão &
-O plugin detectou corretamente a conexão criada dinamicamente, pois monitora as requisições de rede independentemente de o elemento estar presente no HTML original. Porém, não informa no popup que a origem da requisição foi um \texttt{DocumentFragment}. \\ \hline
-
-Tracker via DocumentFragment com atraso &
-Uma requisição de rastreamento criada dinamicamente após cinco segundos &
-Um domínio terceiro detectado: \texttt{facebook.com}; um cookie de terceira parte e de sessão &
-O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demonstrando que o monitoramento de rede permanece ativo depois do carregamento inicial. O popup não apresenta o tempo decorrido nem identifica o uso de \texttt{DocumentFragment}. \\ \hline
-
-Major tracker via Fetch &
-Um tracker carregado por uma chamada à API Fetch &
-Um domínio terceiro detectado: \texttt{facebook.com}; um cookie persistente de terceira parte &
-O plugin detectou corretamente a conexão e o cookie resultantes da chamada Fetch. Entretanto, o popup não informa que a requisição foi iniciada pela API Fetch nem classifica explicitamente o domínio como rastreador. \\ \hline
-
-Major tracker via Fetch com atraso &
-Um tracker carregado por uma chamada Fetch após cinco segundos &
-Um domínio terceiro detectado: \texttt{facebook.com}; um cookie persistente de terceira parte &
-O plugin detectou corretamente a conexão e o cookie mesmo após o atraso, demonstrando que o monitoramento permanece ativo depois do carregamento inicial. Entretanto, o popup não apresenta o tempo decorrido nem identifica a requisição como Fetch. \\ \hline
-
+Major tracker via script & 1 major tracker carregado por \texttt{script src} & \texttt{doubleclick.\allowbreak{}net} como terceiro; 0 cookies; score 99 & A requisição foi observada em \texttt{onBeforeRequest}. O script do \texttt{doubleclick.\allowbreak{}net} não definiu cookies na resposta, e o plugin identifica o domínio como terceiro, mas não o classifica como rastreador por lista. \\ \hline
+Major tracker com surrogate & 1 major tracker substituível por surrogate & \texttt{doubleclick.\allowbreak{}net}; 0 cookies; score 99 & O plugin detecta a conexão, mas não substitui scripts por surrogates. No logger do uBlock Origin do G1, os scripts \texttt{adsbygoogle.\allowbreak{}js} e \texttt{gpt.\allowbreak{}js} foram trocados por versões neutralizadas (\texttt{redirect-rule}), mecanismo que este teste avalia e que o plugin não implementa. \\ \hline
+Major tracker via img & 1 major tracker carregado por \texttt{img src} & \texttt{facebook.\allowbreak{}com}; 1 cookie de terceira parte persistente; score 96 & Detectou a conexão e o \texttt{Set-Cookie} da resposta da imagem, penalizado no critério de cookies de terceira parte. \\ \hline
+Tracker via DocumentFragment & Requisição criada dinamicamente por fragmento & \texttt{facebook.\allowbreak{}com}; 1 cookie de terceira parte de sessão; score 97 & Detectado porque o monitoramento é feito na rede, independente de o elemento existir no HTML original. O plugin não informa que a origem foi um \texttt{DocumentFragment}. \\ \hline
+DocumentFragment com atraso de 5 s & Mesma requisição, 5 s após o carregamento & \texttt{facebook.\allowbreak{}com}; 1 cookie de terceira parte de sessão; score 97 & O monitoramento continua ativo depois do carregamento inicial, então a requisição tardia também foi registrada. \\ \hline
+Major tracker via fetch & Tracker carregado com a API Fetch & \texttt{facebook.\allowbreak{}com}; 1 cookie de terceira parte persistente; score 96 & Detectado na rede. O tipo da requisição (fetch) não é exibido no popup. \\ \hline
+Fetch com atraso de 5 s & Mesma requisição, 5 s após o carregamento & \texttt{facebook.\allowbreak{}com}; 1 cookie de terceira parte persistente; score 96 & Detectado mesmo após o atraso. \\ \hline
 \end{longtable}
+\normalsize
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/1-major-via-script.png}
-    \caption{Resultado do Privacy Inspector no teste de carregamento de um rastreador por script.}
-    \label{fig:major-via-script}
-\end{figure}
+Em todos os casos o plugin registrou 1 item em \texttt{localStorage}, 1 em \texttt{sessionStorage} e 1 banco IndexedDB, criados pela própria página de testes. O ícone do uBlock Origin não aparece nas capturas porque a extensão estava desativada.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/1-major-via-img.png}
-    \caption{Resultado do Privacy Inspector no teste de carregamento de um rastreador por imagem.}
-    \label{fig:major-via-img}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/1-major-via-surrogate.png}
-    \caption{Resultado do Privacy Inspector no teste de rastreador com suporte a surrogate.}
-    \label{fig:major-with-surrogate}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/tracker-document-fragment.png}
-    \caption{Resultado do Privacy Inspector no teste de rastreador criado por DocumentFragment.}
-    \label{fig:tracker-document-fragment}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s.png}
-    \caption{Resultado do Privacy Inspector no teste de rastreador criado por DocumentFragment após cinco segundos.}
-    \label{fig:tracker-document-fragment-delay}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/1-major-via-fetch.png}
-    \caption{Resultado do Privacy Inspector no teste de carregamento de rastreador por Fetch.}
-    \label{fig:major-via-fetch}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s.png}
-    \caption{Resultado do Privacy Inspector no teste de rastreador carregado por Fetch após cinco segundos.}
-    \label{fig:major-via-fetch-delay}
-\end{figure}
+\pair{evidencias/ddg/tracker-reporting/1-major-via-script.png}{evidencias/ddg/tracker-reporting/1-major-via-surrogate.png}{Major tracker via script (esq.) e com surrogate (dir.).}
+\pair{evidencias/ddg/tracker-reporting/1-major-via-img.png}{evidencias/ddg/tracker-reporting/1-major-via-img-1.png}{Major tracker via img: popup e seção de cookies.}
+\pair{evidencias/ddg/tracker-reporting/tracker-document-fragment.png}{evidencias/ddg/tracker-reporting/tracker-document-fragment-1.png}{Tracker via DocumentFragment.}
+\pair{evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s.png}{evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s-1.png}{Tracker via DocumentFragment com atraso de 5 s.}
+\pair{evidencias/ddg/tracker-reporting/1-major-via-fetch.png}{evidencias/ddg/tracker-reporting/1-major-via-fetch-1.png}{Major tracker via fetch.}
+\pair{evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s.png}{evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s-1.png}{Major tracker via fetch com atraso de 5 s.}
 
 \subsection{Storage Blocking}
 
-O teste de Storage Blocking verifica o comportamento de diferentes mecanismos de armazenamento no documento principal e em contextos de terceiros. A Tabela~\ref{tab:storage-blocking} compara o resultado reportado pela página com as informações apresentadas pelo Privacy Inspector.
-
 \begin{table}[H]
-\centering
-\small
-\begin{tabular}{|p{2.5cm}|p{3cm}|p{3.5cm}|p{4.5cm}|}
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
 \hline
-\textbf{Teste} &
-\textbf{Esperado} &
-\textbf{Resultado do plugin} &
-\textbf{Explicação} \\ \hline
-
-Storage Blocking &
-A página tentou armazenar e recuperar o mesmo valor por 23 mecanismos, reportando duas falhas &
-O plugin detectou um item em \texttt{localStorage}, um em \texttt{sessionStorage}, um banco IndexedDB, dois domínios terceiros e nove cookies definidos por respostas HTTP &
-O plugin confirmou o uso dos três mecanismos HTML5 presentes no documento principal. Entretanto, não analisou individualmente o armazenamento dos iframes terceiros nem mecanismos como Cache API, WebSQL, CookieStore, Service Worker, memória, histórico e \texttt{window.name}. A contagem de cookies considera cabeçalhos HTTP \texttt{Set-Cookie}, enquanto a página também testa cookies definidos por JavaScript. \\ \hline
-
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+Storage Blocking & Armazenar e recuperar um valor por 23 mecanismos; a página reportou duas falhas & 1 item em \texttt{localStorage}, 1 em \texttt{sessionStorage}, 1 banco IndexedDB, 2 domínios de terceiros e 9 cookies & O plugin confirmou os três mecanismos HTML5 do documento principal, mas não inspeciona o armazenamento dos iframes de terceiros nem mecanismos como Cache API, CookieStore, Service Worker e \texttt{window.\allowbreak{}name}. A contagem de cookies considera apenas \texttt{Set-Cookie}, enquanto a página também cria cookies por JavaScript. \\ \hline
 \end{tabular}
-\caption{Resultado do teste de Storage Blocking.}
-\label{tab:storage-blocking}
+\caption{Resultado de Storage Blocking.}
 \end{table}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/storage-blocking/storage-blocking.png}
-    \caption{Resultado do Privacy Inspector no teste de Storage Blocking.}
-    \label{fig:storage-blocking}
-\end{figure}
+\evid{evidencias/ddg/storage-blocking/storage-blocking.png}{0.9}{Storage Blocking (coleta de 27/09, versão anterior do popup).}
 
-\subsection{Fingerprinting/Canvas}
-
-Os testes de fingerprinting verificam quais características do navegador podem ser coletadas para identificar um usuário, mesmo sem o uso de cookies ou conexões com terceiros. A página de teste coletou informações provenientes de diferentes APIs, incluindo Canvas, WebGL, Navigator e Screen. Os resultados apresentados pelo Privacy Inspector foram comparados com aqueles informados pela própria página de teste na Tabela~\ref{tab:fingerprinting}.
+\subsection{Fingerprinting e Canvas}
 
 \begin{table}[H]
-\centering
-\small
-\begin{tabular}{|p{2.7cm}|p{3.2cm}|p{3.2cm}|p{4.3cm}|}
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
 \hline
-\textbf{Teste} &
-\textbf{Esperado} &
-\textbf{Resultado do plugin} &
-\textbf{Explicação} \\ \hline
-
-Fingerprinting geral &
-Coleta de características do navegador que podem ser utilizadas para construir uma impressão digital. A página coletou 124 dados, dos quais 14 falharam. &
-Nenhum mecanismo de fingerprinting foi indicado. O plugin apresentou zero domínios terceiros e zero cookies, além de um item em \texttt{localStorage} e um banco \texttt{IndexedDB}. &
-O plugin atual monitora conexões de rede, cookies definidos em respostas HTTP e armazenamento HTML5. Ele ainda não intercepta o acesso a APIs como Canvas, WebGL, Screen e Navigator. Portanto, a coleta ocorreu, mas não foi classificada como fingerprinting. \\ \hline
-
-Canvas visual check &
-Renderização e leitura de uma imagem por diferentes mecanismos de Canvas, incluindo conversão para \texttt{data URL}, leitura dos pixels e \texttt{OffscreenCanvas}. &
-As imagens foram renderizadas normalmente, mas o plugin não apresentou qualquer alerta de fingerprinting. Foram exibidos apenas os dados gerais de armazenamento, cookies e domínios terceiros. &
-O plugin ainda não intercepta chamadas às APIs de Canvas. Assim, operações potencialmente utilizadas para gerar uma impressão digital foram executadas sem serem identificadas pelo Privacy Inspector. \\ \hline
-
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+Fingerprinting geral & Coleta de 124 características do navegador (14 falharam) & Canvas detectado: sim; 6 chamadas & O plugin identificou a parte da coleta feita por canvas: \texttt{toDataURL} (4), \texttt{getImageData} (1) e \texttt{OffscreenCanvas.\allowbreak{}transferToImageBitmap} (1). Os dados obtidos de \texttt{navigator}, \texttt{screen}, WebGL e fontes não são monitorados e, portanto, não aparecem no popup. \\ \hline
+Canvas visual check & Renderização e leitura por data URL, \texttt{getImageData} e \texttt{OffscreenCanvas} & Mesmas 6 chamadas, por método & As quatro formas de leitura exibidas pela página correspondem aos métodos interceptados. A imagem é gerada normalmente, pois o plugin apenas observa e não altera o retorno. \\ \hline
 \end{tabular}
-\caption{Resultado do teste geral de fingerprinting.}
-\label{tab:fingerprinting}
+\caption{Resultados de fingerprinting.}
 \end{table}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/fingerprinting-canvas/fingerprinting-general.png}
-    \caption{Resultado do Privacy Inspector no teste geral de fingerprinting. A página coletou 124 características do navegador, enquanto o plugin não identificou explicitamente a atividade como fingerprinting.}
-    \label{fig:fingerprinting-general}
-\end{figure}
+\evid{evidencias/ddg/fingerprinting-canvas/fingerprinting-general.png}{0.9}{Fingerprinting geral: canvas detectado com 6 chamadas.}
+\evid{evidencias/ddg/fingerprinting-canvas/fingerprinting-canvas.png}{0.9}{Canvas visual check e métodos interceptados.}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/ddg/fingerprinting-canvas/fingerprinting-canvas.png}
-    \caption{Resultado do Privacy Inspector durante o teste visual de Canvas. As diferentes formas de renderização foram executadas, mas não foram classificadas pelo plugin como fingerprinting.}
-    \label{fig:fingerprinting-canvas}
-\end{figure}
+\subsection{Tracker Blocking (Request Blocking)}
 
-\section{Análise de Sites Reais}
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
+\hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+Request Blocking & A página tenta 23 tipos de requisição a \texttt{bad.\allowbreak{}third-party.\allowbreak{}site} e orienta adicionar esse domínio à lista de bloqueio da ferramenta testada; sem bloqueio, todas carregam & 22 de 23 carregaram (apenas WebSocket falhou); plugin registrou \texttt{third-party.\allowbreak{}site}, 2 indicadores de hijacking (WebSocket e polling para \texttt{third-party.\allowbreak{}site}); score 85 & Por padrão o plugin apenas observa e só bloqueia domínios da lista personalizada, que estava vazia neste teste. Por isso o resultado coincide com um navegador sem bloqueio. A falha do WebSocket ocorreu na conexão, e o plugin registrou a tentativa em \texttt{onBeforeRequest}. O indicador de polling é compatível com as reconexões automáticas do teste de \texttt{server-sent-events}, que repete requisições ao mesmo terceiro. É um exemplo de comportamento que o plugin sinaliza sem conseguir distinguir intenção maliciosa. \\ \hline
+\end{tabular}
+\caption{Resultado de Request Blocking.}
+\end{table}
 
-Para avaliar o funcionamento do Privacy Inspector em páginas reais, foram selecionados os sites G1, UBC e YouTube. Para cada página, os resultados apresentados pelo plugin foram comparados com os dados de rede registrados em um arquivo HAR sanitizado. As capturas de tela e os arquivos HAR sanitizados estão organizados no repositório em \texttt{relatorio/evidencias/sites-reais/}, em uma subpasta correspondente a cada site.
+A capacidade de bloqueio é demonstrada separadamente na Seção~\ref{sec:blocklist}. O resultado completo exportado pela página está em \path{evidencias/ddg/request-blocking/request-blocking-results.json}.
+
+\evid{evidencias/ddg/request-blocking/request-blocking.png}{0.9}{Request Blocking: resultados da página e popup.}
+\evid{evidencias/ddg/request-blocking/request-blocking-1.png}{0.9}{Request Blocking: indicadores de WebSocket e polling.}
+
+\subsection{Storage Partitioning}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
+\hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+Storage Partitioning & Dados de 21 mecanismos isolados entre origens; resultado: 19 \emph{pass} e 2 \emph{unsupported} (WebSQL e Prefetch Cache) & Em \texttt{first-party.\allowbreak{}site}: 1 terceiro (\texttt{privacy-test-pages.\allowbreak{}site}), 1 cookie de primeira parte persistente; score 99 & O particionamento é aplicado pelo próprio Firefox (Total Cookie Protection e \emph{dynamic state partitioning}), e não pelo plugin. O plugin observa o armazenamento apenas do documento principal e não verifica se os dados de um iframe de terceiro estão particionados, então não há divergência a corrigir, mas também não há detecção. Em outra página visitada durante a coleta, o console do Firefox registrou uma mensagem de acesso particionado concedido a um embed do YouTube, que é esse mesmo mecanismo em um site real. \\ \hline
+\end{tabular}
+\caption{Resultado de Storage Partitioning.}
+\end{table}
+
+\evid{evidencias/ddg/storage-partitioning/storage-partitioning-1.png}{0.9}{Storage Partitioning: resultados e popup.}
+\evid{evidencias/ddg/storage-partitioning/storage-partitioning-2.png}{0.9}{Storage Partitioning: continuação do popup.}
+
+\subsection{Bounce Tracking}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
+\hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+Bounce Tracking (\emph{Go to good.third-party.site}) & \texttt{bad.\allowbreak{}third-party.\allowbreak{}site} lê seu UID e o repassa ao destino via URL; a página exibiu o ID 54 no \texttt{localStorage} e no cookie & 1 indicador de bounce tracking: \texttt{good.\allowbreak{}third-party.\allowbreak{}site} $\rightarrow$ \texttt{bad.\allowbreak{}third-party.\allowbreak{}site} $\rightarrow$ \texttt{good.\allowbreak{}third-party.\allowbreak{}site}, com 0,4 s no site intermediário & Durante o salto, o \texttt{bad.\allowbreak{}third-party.\allowbreak{}site} é o site principal da aba e acessa seu próprio armazenamento como primeira parte, contornando o bloqueio de cookies de terceiros. O plugin detecta o padrão pela permanência de 0,4 s, inferior ao limite de 2 s. Como origem, intermediário e destino compartilham o eTLD+1 \texttt{third-party.\allowbreak{}site}, a detecção também exigiu os parâmetros \texttt{bounceUID*} na URL de destino, o que evita confundir o bounce com um redirecionamento comum entre subdomínios. O ID permaneceu 54 entre execuções, o que mostra que o rastreador reconheceu o usuário; uma proteção completa apagaria o armazenamento do site intermediário, o que o plugin não faz. \\ \hline
+\end{tabular}
+\caption{Resultado de Bounce Tracking.}
+\end{table}
+
+\evid{evidencias/ddg/bounce-tracking/bounce-tracking.png}{0.9}{Bounce Tracking: página de destino com o UID na URL e a cadeia detectada no popup.}
+
+\subsection{Query Parameters}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
+\hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+Link com \texttt{fbclid}, \texttt{fb\_source} e 1 parâmetro comum & Resultado esperado \texttt{"u=14"} & URL final \texttt{query.\allowbreak{}html?u=14}; nenhum parâmetro de rastreamento sinalizado & O Firefox remove parâmetros de rastreamento conhecidos como \texttt{fbclid} antes da navegação (\emph{query stripping}, ativo em janela privada). A página recebeu exatamente o resultado esperado, e o plugin, que analisa a URL efetivamente carregada, não tinha o que sinalizar. Parâmetros que o Firefox não remove, como \texttt{utm\_*}, são sinalizados pelo plugin. \\ \hline
+\end{tabular}
+\caption{Resultado de Query Parameters.}
+\end{table}
+
+\evid{evidencias/ddg/query-parameters/query-parameters.png}{0.9}{Query Parameters: URL já sem \texttt{fbclid}.}
+
+\subsection{js-leaks e indicadores de hook}
+
+A página \texttt{security/\allowbreak{}js-leaks.\allowbreak{}html} compara as propriedades do objeto \texttt{window} com o perfil de referência do Firefox 92 e lista o que foi adicionado, removido ou alterado. O teste foi executado com o plugin ligado e desligado.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|p{2.4cm}|p{3.2cm}|p{3.6cm}|p{4.8cm}|}
+\hline
+\textbf{Teste} & \textbf{Esperado (página)} & \textbf{Plugin} & \textbf{Explicação} \\ \hline
+js-leaks & Lista de diferenças no escopo global em relação ao perfil de referência & Com o plugin: \texttt{window.\allowbreak{}open} alterado, com código de \texttt{monitoredOpen}. Sem o plugin: \texttt{window.\allowbreak{}open} não aparece. Popup: 0 indicadores de hijacking & A página revela o rastro do próprio plugin, que envolve \texttt{window.\allowbreak{}open} para detectar pop-ups. O \texttt{hook-detector.\allowbreak{}js} ignora a própria substituição, por isso o popup não acusa hook. Os hooks de canvas não aparecem porque a página inspeciona as propriedades de \texttt{window}, e não os protótipos. As demais diferenças (APIs novas do Firefox 156, idiomas e \texttt{location.\allowbreak{}toString}) aparecem nas duas execuções e decorrem da versão e do perfil. \texttt{clipboard.\allowbreak{}writeText} alterado nas duas execuções corresponde ao scriptlet \texttt{prevent-clipboard-write} do uBlock Origin, que ainda estava ativo neste teste, e mostra que bloqueadores também deixam rastro observável. \\ \hline
+\end{tabular}
+\caption{Resultado de js-leaks.}
+\end{table}
+
+Esse resultado mostra um compromisso de projeto. O mesmo mecanismo que o BeEF usa para instrumentar uma página, a substituição de funções globais, é usado pelo plugin para detectar comportamentos e pelo uBlock Origin para neutralizar anúncios, e em todos os casos a alteração pode ser observada pela página, que pode usá-la para identificar a extensão ou para evitá-la.
+
+\evid{evidencias/ddg/js-leaks/js-leaks-plugin-ligado.png}{0.9}{js-leaks com o plugin ligado: \texttt{window.\allowbreak{}open} alterado.}
+\evid{evidencias/ddg/js-leaks/js-leaks-plugin-desligado.png}{0.9}{js-leaks com o plugin desligado: \texttt{window.\allowbreak{}open} não aparece.}
+
+Como a página js-leaks não executa nenhum hook, a detecção foi validada também com um teste controlado em \texttt{example.\allowbreak{}com}, uma página sem scripts de terceiros: o comando \texttt{window.fetch = () => \{\}} executado no console gerou exatamente um indicador, \emph{Objeto global sobrescrito: window.fetch}, sem cookies, terceiros ou outros indicadores.
+
+\evid{evidencias/ddg/hijacking/hijacking-fetch.png}{0.9}{Teste controlado de hook em \texttt{example.\allowbreak{}com}.}
+
+\subsection{Lista de bloqueio personalizada}\label{sec:blocklist}
+
+Com \texttt{doubleclick.\allowbreak{}net} adicionado à lista e o uBlock Origin desativado, a página \emph{Major tracker via script} foi recarregada. O popup registrou 1 requisição bloqueada para \texttt{doubleclick.\allowbreak{}net} e exibiu o domínio na lista, com a opção de removê-lo. O domínio foi removido da lista antes das demais coletas.
+
+\evid{evidencias/ddg/blocked/blocked.png}{0.9}{Lista de bloqueio: requisição para \texttt{doubleclick.\allowbreak{}net} cancelada pelo plugin.}
+
+\section{Análise de sites reais}
+
+Conforme orientação do professor, os sites foram escolhidos livremente. Foram escolhidos o G1 (portal de notícias financiado por publicidade), o site institucional da UBC e o YouTube (plataforma de vídeo), por representarem perfis distintos de uso de terceiros e armazenamento.
+
+Para cada site há, em \path{evidencias/sites-reais/<site>/}: capturas do popup (\path{privacy-inspector*.png}), o HAR sanitizado (\path{<site>.sanitized.har}), o resultado do Blacklight (\texttt{blacklight*.\allowbreak{}png}) e o popup e o logger do uBlock Origin (\texttt{ublock.\allowbreak{}png}, \texttt{ublock-logger.\allowbreak{}png} e o registro completo em \texttt{ublock-logger.\allowbreak{}md}).
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|c|c|c|c|c|c|}
+\hline
+\textbf{Site} & \textbf{Req. HAR} & \textbf{1ª parte} & \textbf{3ª parte} & \textbf{Status 0} & \textbf{Terceiros (plugin)} & \textbf{Score} \\ \hline
+G1 & 181 & 44 & 137 & 19 & 21 & 62 (B) \\ \hline
+UBC & 38 & 19 & 19 & 9 & 8 & 96 (A) \\ \hline
+YouTube & 51 & 35 & 16 & 4 & 7 & 90 (A) \\ \hline
+\end{tabular}
+\caption{Resumo das coletas de 28/09. ``Status 0'' são requisições sem resposta no HAR, em sua maioria bloqueadas pelo ETP; as demais são beacons interrompidos, como os de \texttt{log\_event} do YouTube.}
+\end{table}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|p{3.4cm}|p{3.6cm}|p{3.6cm}|p{3.6cm}|}
+\hline
+\textbf{Ferramenta} & \textbf{G1} & \textbf{UBC} & \textbf{YouTube} \\ \hline
+Blacklight: ad trackers & 67 & 12 & 0 (28/09); 3 (26/09) \\ \hline
+Blacklight: cookies de terceiros & 100 & 15 & 0 \\ \hline
+Blacklight: outros achados & Pixel do X; remarketing do Google Analytics & Pixel do X; remarketing do Google Analytics & Nenhum \\ \hline
+uBlock Origin: bloqueios & 50 (21\%); 6 de 22 domínios conectados & 1 (2\%); 5 de 6 domínios & 5 (8\%); 4 de 6 domínios \\ \hline
+Plugin: cookies & 13 de 1ª parte persistentes (subindo para 31 com a página aberta); 0 de 3ª & 0 & 2 de 1ª e 2 de 3ª, todos persistentes \\ \hline
+Plugin: HTML5 & 11 local, 6 session, 0 IDB & 0 & 2 local, 0 session, 5 IDB \\ \hline
+Plugin: canvas / sync & não / 0 & não / 0 & não / 0 \\ \hline
+Plugin: hijacking & 4 (\texttt{fetch}, \texttt{XHR.\allowbreak{}open}, \texttt{XHR.\allowbreak{}send}, \texttt{addEventListener}) & 0 & 0 \\ \hline
+\end{tabular}
+\caption{Comparação entre o plugin, o Blacklight e o uBlock Origin.}
+\end{table}
 
 \subsection{G1}
 
-No G1, o Privacy Inspector identificou 18 domínios de terceiros únicos, resultado compatível com a análise do arquivo HAR. O HAR apresentou 175 entradas, das quais 173 correspondiam a requisições HTTP ou HTTPS. Entre essas requisições, 132 foram direcionadas a domínios de terceiros e 41 a domínios pertencentes à primeira parte.
+O plugin registrou 21 domínios de terceiros e o HAR, 20. A diferença é \texttt{google-analytics.\allowbreak{}com}, que o plugin observou depois da exportação do HAR, já que a página continua fazendo requisições enquanto está aberta. O HAR registra 33 cabeçalhos \texttt{Set-Cookie}, todos de primeira parte e correspondentes a três cookies (\texttt{glb\_uid}, \texttt{glb\_uid\_jwt} e \texttt{hsid}), cada um redefinido 11 vezes. Isso explica o crescimento da contagem do plugin de 13 para 27 e 31 definições entre as capturas.
 
-O arquivo utilizado nessa análise está disponível em \texttt{relatorio/evidencias/sites-reais/g1/g1.sanitized.har}.
+\small
+\begin{longtable}{|p{3.3cm}|p{1.9cm}|p{1.6cm}|p{1.6cm}|p{5.0cm}|}
+\caption{Reconciliação de domínios no G1.}\\
+\hline
+\textbf{Domínio} & \textbf{Plugin / HAR} & \textbf{Blacklight} & \textbf{uBO} & \textbf{Explicação} \\ \hline
+\endfirsthead
+\hline
+\textbf{Domínio} & \textbf{Plugin / HAR} & \textbf{Blacklight} & \textbf{uBO} & \textbf{Explicação} \\ \hline
+\endhead
+\texttt{doubleclick.\allowbreak{}net} & sim (6 req., todas bloqueadas pelo ETP) & sim & bloqueado & Concordância. O plugin conta a tentativa de conexão, mesmo quando o ETP a cancela. \\ \hline
+\texttt{googletagmanager.\allowbreak{}com}, \texttt{google.\allowbreak{}com}, \texttt{google-analytics.\allowbreak{}com} & sim & sim & bloqueado & Concordância. O uBO bloqueou \texttt{/\allowbreak{}ccm/\allowbreak{}collect}, \texttt{/\allowbreak{}rmkt/\allowbreak{}collect} e \texttt{/\allowbreak{}g/\allowbreak{}collect}; o HAR mostra \texttt{analytics.\allowbreak{}google.\allowbreak{}com} bloqueado pelo ETP. \\ \hline
+\texttt{googlesyndication.\allowbreak{}com}, \texttt{rubiconproject.\allowbreak{}com}, \texttt{scorecardresearch.\allowbreak{}com} & sim (bloqueados pelo ETP) & sim & bloqueado & Concordância. O uBO substituiu \texttt{adsbygoogle.\allowbreak{}js} por um surrogate. \\ \hline
+\texttt{ads-twitter.\allowbreak{}com} & sim (bloqueado) & sim (pixel do X) & bloqueado & Concordância. \\ \hline
+\texttt{facebook.\allowbreak{}net} & sim (bloqueado) & não & bloqueado & O HAR mostra a tentativa de carregar \texttt{fbevents.\allowbreak{}js} na coleta feita no Brasil. O Blacklight, a partir da Califórnia, não encontrou o pixel, o que é compatível com tags configuradas por região. \\ \hline
+\texttt{clarity.\allowbreak{}ms} & sim (bloqueado) & não (sem gravação de sessão) & bloqueado & O Microsoft Clarity é um serviço de gravação de sessão. Ele foi requisitado na coleta brasileira e não apareceu no scan do Blacklight, pela mesma razão. \\ \hline
+\texttt{permutive.\allowbreak{}app}, \texttt{adnami.\allowbreak{}io}, \texttt{dv.\allowbreak{}tech}, \texttt{mrf.\allowbreak{}io}, \texttt{debugbear.\allowbreak{}com} & sim & não & bloqueado & Não constam entre as empresas listadas pelo Blacklight, que classifica rastreadores pela base Tracker Radar do DuckDuckGo de março de 2024. O uBO bloqueia pelas suas listas de filtros. \\ \hline
+\texttt{g.\allowbreak{}globo}, \texttt{glbimg.\allowbreak{}com}, \texttt{globoi.\allowbreak{}com} & sim & não & parcial & São domínios do próprio Grupo Globo com eTLD+1 diferente de \texttt{globo.\allowbreak{}com}, por isso o plugin os conta como terceiros. O uBO bloqueou recursos específicos: beacons de \texttt{sdk-metrics.\allowbreak{}g.\allowbreak{}globo}, \texttt{sentry.\allowbreak{}globoi.\allowbreak{}com} e o Chartbeat em \texttt{s3.\allowbreak{}glbimg.\allowbreak{}com}. \\ \hline
+\texttt{horizon-track.\allowbreak{}globo.\allowbreak{}com}, \texttt{trackid.\allowbreak{}globoid.\allowbreak{}globo.\allowbreak{}com} & não (1ª parte) & não & bloqueado & Rastreadores de primeira parte. Só o uBO os identifica, por filtrar URLs e não domínios. \\ \hline
+\texttt{w3schools.\allowbreak{}com} & sim & não & não & Vídeo de exemplo (\texttt{/\allowbreak{}tags/\allowbreak{}movie.\allowbreak{}mp4}) embutido na página, sem relação com rastreamento; nenhuma ferramenta o bloqueia. \\ \hline
+Criteo, PubMatic, OpenX, Amazon, BidSwitch, MediaMath, Lotame, TowerData, Adobe e outros (20 domínios) & não & sim & não & Esses domínios participam do leilão de anúncios (header bidding) e da sincronização de IDs. O leilão é disparado pelo Prebid (\path{ads.rubiconproject.com/prebid/11366_g1.js}), que foi bloqueado pelo ETP na coleta do plugin e pelo uBO. Sem o leilão, esses parceiros nunca são contatados, os 100 cookies de terceiros vistos pelo Blacklight não são criados e não ocorre o cookie sync que o plugin detectaria. \\ \hline
+\end{longtable}
+\normalsize
 
-Em relação aos cookies, o Privacy Inspector registrou 16 definições, todas de primeira parte e persistentes. O HAR apresentou 30 registros de definição de cookies, correspondentes a três nomes distintos: \texttt{glb\_uid}, \texttt{glb\_uid\_jwt} e \texttt{hsid}. Cada cookie foi redefinido múltiplas vezes durante o carregamento. A diferença numérica decorre da repetição das definições e dos limites temporais distintos das coletas. Os mecanismos \texttt{localStorage}, \texttt{sessionStorage} e IndexedDB não são representados pelo HAR, sendo observados diretamente pelo plugin.
+Os quatro indicadores de hook no G1 apareceram com o uBlock Origin desativado, portanto vêm de scripts da página. A combinação de \texttt{fetch}, \texttt{XMLHttpRequest.\allowbreak{}open/\allowbreak{}send} e \texttt{addEventListener} é a instrumentação típica de ferramentas de monitoramento de erros e desempenho, e o HAR mostra requisições para o Sentry (\texttt{sentry.\allowbreak{}globoi.\allowbreak{}com}) e para o DebugBear. É um caso de uso legítimo do mesmo mecanismo que um hook malicioso usaria, e o plugin não tem como diferenciar os dois.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/sites-reais/g1/privacy-inspector.png}
-    \caption{Resultado principal do Privacy Inspector durante a análise do G1.}
-    \label{fig:g1-privacy-inspector}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.65\textwidth]
-        {evidencias/sites-reais/g1/privacy-inspector-popup-continuation.png}
-    \caption{Continuação do popup com os resultados de armazenamento e cookies do G1.}
-    \label{fig:g1-popup-continuation}
-\end{figure}
+\popups{evidencias/sites-reais/g1/privacy-inspector.png}{evidencias/sites-reais/g1/privacy-inspector-1.png}{evidencias/sites-reais/g1/privacy-inspector-2.png}{Popup do plugin no G1: score, domínios e armazenamento.}
+\pair{evidencias/sites-reais/g1/privacy-inspector-3.png}{evidencias/sites-reais/g1/privacy-inspector-4.png}{Popup do plugin no G1: hijacking e cookies.}
+\evid{evidencias/sites-reais/g1/blacklight.png}{0.6}{Blacklight no G1 (detalhes em \texttt{blacklight-detail.\allowbreak{}png}).}
+\evid{evidencias/sites-reais/g1/ublock.png}{0.9}{uBlock Origin no G1: 50 bloqueios.}
+\evid{evidencias/sites-reais/g1/ublock-logger.png}{0.8}{Logger do uBlock Origin no G1 (amostra; registro completo em \texttt{ublock-logger.\allowbreak{}md}).}
 
 \subsection{UBC}
 
-No site institucional da University of British Columbia, o Privacy Inspector identificou sete domínios de terceiros únicos. Esse resultado foi confirmado pela análise do arquivo HAR, que apresentou 38 requisições distribuídas entre 11 hosts. Dessas requisições, 19 foram direcionadas à primeira parte e 19 a domínios de terceiros.
+Plugin e HAR coincidem nos 8 domínios de terceiros. Nenhum cookie foi definido por cabeçalho \texttt{Set-Cookie} e nenhum armazenamento HTML5 foi usado. O Google Analytics, que foi executado, cria seus cookies por JavaScript (\texttt{document.\allowbreak{}cookie}), que o plugin não contabiliza.
 
-O HAR registrou nove requisições com status zero, associadas a recursos bloqueados pelo mecanismo de proteção contra rastreamento do navegador. Apesar dessas tentativas de conexão, nenhum cookie foi definido nas respostas observadas. Esse resultado é compatível com o Privacy Inspector, que também apresentou zero cookies definidos durante o carregamento.
+\small
+\begin{longtable}{|p{3.3cm}|p{1.9cm}|p{1.6cm}|p{1.6cm}|p{5.0cm}|}
+\caption{Reconciliação de domínios na UBC.}\\
+\hline
+\textbf{Domínio} & \textbf{Plugin / HAR} & \textbf{Blacklight} & \textbf{uBO} & \textbf{Explicação} \\ \hline
+\endfirsthead
+\hline
+\textbf{Domínio} & \textbf{Plugin / HAR} & \textbf{Blacklight} & \textbf{uBO} & \textbf{Explicação} \\ \hline
+\endhead
+\texttt{googletagmanager.\allowbreak{}com} & sim & sim & bloqueado (surrogate) & O uBO fez um único bloqueio: substituiu o \texttt{gtm.\allowbreak{}js} por um surrogate. Como o GTM carrega as demais tags, esse bloqueio impede todas as outras requisições de rastreamento, o que explica o uBO registrar só 1 bloqueio enquanto o Blacklight encontrou 12 rastreadores. \\ \hline
+\texttt{doubleclick.\allowbreak{}net} (\texttt{ad.}, \texttt{fls.}) & sim (5 req., todas bloqueadas pelo ETP) & sim & não chegou a ser requisitado & Tags do Floodlight disparadas pelo GTM. O ETP as cancelou, então nenhum cookie foi criado. \\ \hline
+\texttt{google.\allowbreak{}com}, \texttt{google.\allowbreak{}com.\allowbreak{}br} & sim & sim (\texttt{google.\allowbreak{}com}) & não chegou a ser requisitado & Google Analytics e conversões do Google Ads (\texttt{/\allowbreak{}g/\allowbreak{}collect}, \texttt{/\allowbreak{}ccm/\allowbreak{}collect}, \texttt{/\allowbreak{}gmp/\allowbreak{}conversion}), que não foram bloqueados. A requisição \path{google.com.br/ads/ga-audiences} corresponde ao recurso de \emph{remarketing audiences} do Google Analytics, o mesmo que o Blacklight apontou, e mostra concordância entre as ferramentas. \\ \hline
+\texttt{sc-static.\allowbreak{}net}, \texttt{mookie1.\allowbreak{}com} & sim (bloqueados pelo ETP) & não listados individualmente & não chegou a ser requisitado & Pixel do Snapchat e Xaxis/GroupM. O Blacklight cita ``quatro outras empresas'' sem detalhá-las. \\ \hline
+\texttt{ajax.\allowbreak{}googleapis.\allowbreak{}com}, \texttt{typography.\allowbreak{}com} & sim & não & não & Biblioteca jQuery e fontes; não são rastreadores. O plugin as conta por serem de outro domínio. \\ \hline
+\texttt{linkedin.\allowbreak{}com}, \texttt{licdn.\allowbreak{}com}, X e Microsoft & não & sim & não & Tags disparadas pelo GTM que não foram requisitadas na coleta brasileira. É compatível com tags condicionadas por região ou disparadas em cadeia após tags que o ETP cancelou. \\ \hline
+\end{longtable}
+\normalsize
 
-Quanto ao armazenamento HTML5, o plugin identificou um item em \texttt{localStorage}, nenhum item em \texttt{sessionStorage} e nenhum banco IndexedDB. Esses mecanismos não são representados pelo formato HAR e, portanto, foram avaliados diretamente pelo Privacy Inspector.
-
-O arquivo utilizado nessa análise está disponível em \texttt{relatorio/evidencias/sites-reais/ubc/ubc.sanitized.har}.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/sites-reais/ubc/privacy-inspector-ubc.png}
-    \caption{Resultado do Privacy Inspector e registro de rede durante a análise do site da UBC.}
-    \label{fig:ubc-privacy-inspector}
-\end{figure}
+\popups{evidencias/sites-reais/ubc/privacy-inspector.png}{evidencias/sites-reais/ubc/privacy-inspector-1.png}{evidencias/sites-reais/ubc/privacy-inspector-2.png}{Popup do plugin na UBC.}
+\evid{evidencias/sites-reais/ubc/blacklight.png}{0.6}{Blacklight na UBC (detalhes em \texttt{blacklight-detalhes.\allowbreak{}png}).}
+\evid{evidencias/sites-reais/ubc/ublock.png}{0.9}{uBlock Origin na UBC: 1 bloqueio.}
+\evid{evidencias/sites-reais/ubc/ublock-logger.png}{0.8}{Logger do uBlock Origin na UBC: \texttt{gtm.\allowbreak{}js} substituído por surrogate.}
 
 \subsection{YouTube}
 
-Na página inicial do YouTube, o Privacy Inspector identificou seis domínios de terceiros únicos. O arquivo HAR apresentou 56 entradas, das quais 51 correspondiam a requisições HTTP ou HTTPS. Entre essas requisições, 35 foram direcionadas à primeira parte e 16 a terceiros.
+Plugin e HAR coincidem nos 7 domínios de terceiros. O plugin contabilizou 4 cookies persistentes (2 de primeira e 2 de terceira parte), mas o HAR exportado não contém cabeçalhos \texttt{Set-Cookie} para o YouTube. Uma hipótese é que parte das respostas tenha sido atendida pelo service worker do YouTube, cujos cabeçalhos não são incluídos na exportação da mesma forma. O plugin lê os cabeçalhos diretamente da API \texttt{webRequest}.
 
-A análise do HAR identificou sete domínios registráveis de terceiros. Seis deles também foram apresentados pelo plugin: \texttt{doubleclick.net}, \texttt{google.com}, \texttt{google.com.br}, \texttt{googlevideo.com}, \texttt{gstatic.com} e \texttt{ytimg.com}. O domínio adicional, \texttt{googleapis.com}, foi utilizado no carregamento de fontes, mas não apareceu no relatório do Privacy Inspector. Essa divergência pode decorrer do momento em que a requisição foi observada ou do uso de recursos previamente armazenados pelo navegador.
+\small
+\begin{longtable}{|p{3.3cm}|p{1.9cm}|p{1.6cm}|p{1.6cm}|p{5.0cm}|}
+\caption{Reconciliação de domínios no YouTube.}\\
+\hline
+\textbf{Domínio} & \textbf{Plugin / HAR} & \textbf{Blacklight} & \textbf{uBO} & \textbf{Explicação} \\ \hline
+\endfirsthead
+\hline
+\textbf{Domínio} & \textbf{Plugin / HAR} & \textbf{Blacklight} & \textbf{uBO} & \textbf{Explicação} \\ \hline
+\endhead
+\texttt{doubleclick.\allowbreak{}net} & sim (2 req., bloqueadas pelo ETP) & só em 26/09 & bloqueado & \path{static.doubleclick.net/instream/ad_status.js} foi trocado por surrogate pelo uBO, e \path{googleads.g.doubleclick.net/pagead/id}, que busca um ID de publicidade, recebeu resposta vazia (\texttt{noop.\allowbreak{}txt}). \\ \hline
+\texttt{google.\allowbreak{}com}, \texttt{google.\allowbreak{}com.\allowbreak{}br} & sim & só em 26/09 & bloqueado & Requisições \texttt{/\allowbreak{}pagead/\allowbreak{}lvz} de conversão de anúncio. O \texttt{.\allowbreak{}com.\allowbreak{}br} é específico da coleta brasileira. \\ \hline
+\texttt{ytimg.\allowbreak{}com} & sim & sim & não & Imagens do YouTube, único domínio listado pelo Blacklight em 28/09. \\ \hline
+\texttt{googlevideo.\allowbreak{}com}, \texttt{gstatic.\allowbreak{}com}, \texttt{fonts.\allowbreak{}googleapis.\allowbreak{}com} & sim & não & não & CDN de vídeo, recursos estáticos e fontes. São da mesma organização (Alphabet), mas de outro domínio. \\ \hline
+\path{youtube.com/youtubei/v1/log_event}, \texttt{/\allowbreak{}generate\_204} & não (1ª parte) & não & bloqueado & Telemetria de primeira parte, bloqueada apenas pelo uBO. \\ \hline
+\texttt{google-analytics.\allowbreak{}com}, \texttt{googletagmanager.\allowbreak{}com} & não & só em 26/09 & não & Presentes apenas no scan de 26/09. O Blacklight passou de 3 para 0 rastreadores entre 26/09 e 28/09, o que mostra que a mesma página varia entre carregamentos. \\ \hline
+\end{longtable}
+\normalsize
 
-Nenhum cookie foi definido pelas respostas registradas no HAR, resultado compatível com os zero cookies apresentados pelo Privacy Inspector. Embora o HAR contenha cabeçalhos de cookies enviados em algumas requisições, esses valores já estavam presentes no navegador e não foram definidos durante o carregamento analisado. O plugin contabiliza somente eventos associados a cabeçalhos HTTP \texttt{Set-Cookie} recebidos nas respostas.
+\popups{evidencias/sites-reais/youtube/privacy-inspector.png}{evidencias/sites-reais/youtube/privacy-inspector-1.png}{evidencias/sites-reais/youtube/privacy-inspector-2.png}{Popup do plugin no YouTube.}
+\evid{evidencias/sites-reais/youtube/blacklight.png}{0.6}{Blacklight no YouTube em 28/09 (o scan de 26/09 está em \texttt{blacklight-2026-09-26.\allowbreak{}png}).}
+\evid{evidencias/sites-reais/youtube/ublock.png}{0.9}{uBlock Origin no YouTube: 5 bloqueios.}
+\evid{evidencias/sites-reais/youtube/ublock-logger.png}{0.8}{Logger do uBlock Origin no YouTube: bloqueios de rede e scriptlets que removem anúncios do player.}
 
-Quanto ao armazenamento HTML5, o Privacy Inspector identificou cinco itens em \texttt{localStorage}, três itens em \texttt{sessionStorage} e dez bancos IndexedDB. Esses mecanismos não são representados pelo formato HAR.
+\section{Pontuação de privacidade}
 
-O arquivo utilizado nessa análise está disponível em
-\texttt{relatorio/evidencias/sites-reais/youtube/youtube.sanitized.har}.
+\subsection{Metodologia}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]
-        {evidencias/sites-reais/youtube/privacy-inspector-youtube.png}
-    \caption{Resultado do Privacy Inspector e registro de rede durante a análise da página inicial do YouTube.}
-    \label{fig:youtube-privacy-inspector}
-\end{figure}
+A pontuação vai de 0 a 100, e quanto maior, melhor. Cada critério tem um peso, e os pesos somam 100, além de um limite de saturação. A penalidade de cada critério é proporcional ao valor observado até atingir o limite:
+\[
+\text{penalidade}_i = \text{peso}_i \times \min\left(\frac{\text{valor}_i}{\text{limite}_i}, 1\right),
+\qquad
+\text{score} = 100 - \sum_i \text{penalidade}_i .
+\]
 
-\subsection{Comparação entre os sites}
+O critério usado para definir os pesos foi o quanto cada mecanismo permite que terceiros identifiquem o usuário entre sites e compartilhem ou comercializem esses dados, ou ajam sem o seu consentimento.
 
 \begin{table}[H]
-\centering
-\small
-\begin{tabular}{|p{2cm}|c|c|c|c|c|}
+\centering\small
+\begin{tabular}{|p{3.4cm}|c|c|p{7.6cm}|}
 \hline
-\textbf{Site} &
-\textbf{Req. HAR} &
-\textbf{Terceiros no plugin} &
-\textbf{localStorage} &
-\textbf{sessionStorage} &
-\textbf{IndexedDB} \\ \hline
-
-G1 & 175 & 18 & 12 & 6 & 0 \\ \hline
-UBC & 38 & 7 & 1 & 0 & 0 \\ \hline
-YouTube & 56 & 6 & 5 & 3 & 10 \\ \hline
-
+\textbf{Critério} & \textbf{Peso} & \textbf{Limite} & \textbf{Justificativa} \\ \hline
+Bounce tracking / cookie sync & 25 & 3 & É a troca direta do identificador do usuário entre empresas, ou seja, o compartilhamento de dados acontecendo. \\ \hline
+Cookies de terceira parte & 20 & 10 & Identificador clássico que acompanha o usuário entre sites. \\ \hline
+Indicadores de hijacking/hook & 20 & 3 & Terceiros executando ações sem consentimento (abrir abas, redirecionar, interceptar requisições), com possibilidade de exfiltrar dados. Inclui pop-unders, como abas de apostas abertas automaticamente. \\ \hline
+Canvas fingerprinting & 15 & 1 & Identifica o usuário entre sites e não pode ser apagado por ele. O peso é menor que o de cookies de terceiros porque o detector conta qualquer uso de canvas, com risco de falso positivo. \\ \hline
+Domínios de terceiros & 10 & 20 & Cada conexão vaza o IP e a página visitada, mas sozinha não identifica o usuário, e muitos domínios são CDNs ou da mesma organização. \\ \hline
+Cookies persistentes & 5 & 20 & Em geral são da própria página e indicam duração, não compartilhamento. \\ \hline
+Armazenamento HTML5 & 5 & 20 & Medido apenas no documento principal, ou seja, dados da própria página. \\ \hline
 \end{tabular}
-\caption{Comparação dos resultados observados nos três sites reais.}
-\label{tab:comparacao-sites}
+\caption{Critérios, pesos e justificativas.}
 \end{table}
 
-O G1 apresentou a maior quantidade de requisições e domínios de terceiros, enquanto a UBC apresentou o menor uso de armazenamento HTML5. O YouTube se destacou pela utilização de dez bancos IndexedDB, refletindo a maior complexidade de armazenamento local de uma aplicação web dinâmica. Os resultados demonstram que quantidade de requisições, presença de terceiros e utilização de armazenamento são dimensões distintas do comportamento de privacidade de uma página.
+Classificação: A (80 a 100, boa privacidade), B (60 a 79, moderada), C (40 a 59, baixa) e D (abaixo de 40, muito baixa). O cálculo está em \texttt{score.\allowbreak{}js} e é exibido no popup com a penalidade de cada critério.
 
-\section{Limitações e divergências}
+\subsection{Aplicação aos três sites}
 
-Os testes realizados evidenciaram que os resultados do Privacy Inspector dependem do escopo específico de sua coleta. A extensão identifica conexões com domínios de terceiros, mas essa classificação não significa necessariamente que o domínio seja um rastreador. Serviços legítimos, como redes de distribuição de conteúdo, fontes, APIs e recursos pertencentes à mesma organização, também podem ser classificados como terceiros quando possuem um domínio registrável diferente daquele da página principal.
+\begin{table}[H]
+\centering\small
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Critério (peso)} & \textbf{G1} & \textbf{UBC} & \textbf{YouTube} \\ \hline
+Domínios de terceiros (10) & 21/20 $\rightarrow$ $-10$ & 8/20 $\rightarrow$ $-4$ & 7/20 $\rightarrow$ $-3{,}5$ \\ \hline
+Cookies de terceira parte (20) & 0/10 $\rightarrow$ 0 & 0/10 $\rightarrow$ 0 & 2/10 $\rightarrow$ $-4$ \\ \hline
+Cookies persistentes (5) & 13/20 $\rightarrow$ $-3{,}3$ & 0/20 $\rightarrow$ 0 & 4/20 $\rightarrow$ $-1$ \\ \hline
+Armazenamento HTML5 (5) & 17/20 $\rightarrow$ $-4{,}3$ & 0/20 $\rightarrow$ 0 & 7/20 $\rightarrow$ $-1{,}8$ \\ \hline
+Canvas fingerprinting (15) & 0 & 0 & 0 \\ \hline
+Bounce / cookie sync (25) & 0 & 0 & 0 \\ \hline
+Hijacking/hook (20) & 4/3 $\rightarrow$ $-20$ & 0 & 0 \\ \hline
+\textbf{Score} & \textbf{62 (B)} & \textbf{96 (A)} & \textbf{90 (A)} \\ \hline
+Blacklight (ad trackers / cookies 3ª) & 67 / 100 & 12 / 15 & 0 / 0 \\ \hline
+\end{tabular}
+\caption{Pontuação dos sites reais e resultado do Blacklight.}
+\end{table}
 
-A contagem de cookies considera apenas cabeçalhos HTTP \texttt{Set-Cookie} observados durante o carregamento. Cookies criados diretamente por JavaScript não são contabilizados, assim como cookies previamente armazenados e apenas enviados pelo navegador. Além disso, um mesmo cookie pode ser redefinido várias vezes. Essa diferença de escopo explica parte das divergências entre o plugin e os registros presentes nos arquivos HAR.
+\subsection{Comparação crítica com o Blacklight}
 
-A inspeção de armazenamento HTML5 representa o documento principal da página. A implementação contabiliza itens presentes em \texttt{localStorage} e \texttt{sessionStorage}, além dos bancos IndexedDB disponíveis, mas não detalha o armazenamento utilizado individualmente por iframes de terceiros. Também não cobre mecanismos como Cache API, WebSQL, CookieStore, Service Workers, memória, histórico e \texttt{window.name}.
+\textbf{Onde concordam.} As duas ferramentas apontam o G1 como o site mais invasivo dos três, e o YouTube como um site com pouco rastreamento de terceiros na página inicial sem login. Os rastreadores que o plugin viu no G1 e que são reconhecidos como tal (DoubleClick, Google, Rubicon, Comscore, pixel do X) também foram listados pelo Blacklight.
 
-O Privacy Inspector não monitora atualmente o acesso a APIs utilizadas na construção de impressões digitais, como Canvas, WebGL, Navigator e Screen. Por essa razão, as operações executadas nas páginas de fingerprinting foram observadas apenas indiretamente, por meio de armazenamento, cookies e conexões de rede, sem uma classificação específica da atividade.
+\textbf{Onde divergem e por quê.}
+\begin{enumerate}
+  \item \textbf{O que é medido.} O Blacklight mede o que o site \emph{tenta fazer} com um visitante sem nenhuma proteção. O plugin mede o que \emph{efetivamente aconteceu} no navegador da coleta, que tinha o ETP ativo. No G1, o ETP bloqueou o Prebid, e com isso o leilão de anúncios não ocorreu. Por isso o plugin registrou 0 cookies de terceiros contra 100 do Blacklight, e nenhum cookie sync, embora o Blacklight tenha visto parceiros típicos de sincronização como BidSwitch, TowerData, Lotame e Adobe.
+  \item \textbf{A inversão entre UBC e YouTube.} No plugin, a UBC tem a melhor nota (96): as tags de DoubleClick/Floodlight, Snapchat e Xaxis disparadas pelo GTM foram bloqueadas pelo ETP, e as que passaram (Google Analytics e conversões do Google) não definiram cookies por cabeçalho, já que o Google Analytics cria os seus por JavaScript. No Blacklight, a UBC tem 12 rastreadores e 15 cookies de terceiros (X, LinkedIn, Microsoft), enquanto o YouTube tem zero. O YouTube perdeu pontos no plugin por 2 cookies de \texttt{google.\allowbreak{}com} e por domínios como \texttt{googlevideo.\allowbreak{}com}, que são da mesma organização. Para o plugin, domínio diferente é terceiro; para o Blacklight, só conta o que está na lista de rastreadores.
+  \item \textbf{Hooks.} O Blacklight não avalia hooks em objetos globais. O plugin aplicou a penalidade máxima do critério ao G1 por quatro funções sobrescritas, que muito provavelmente vêm de ferramentas de monitoramento como o Sentry. Isso reduz a nota do G1 por um comportamento que não é necessariamente malicioso, e é a principal fonte de falso positivo da metodologia.
+  \item \textbf{Localização e tempo.} O Blacklight escaneia a partir da Califórnia, e a coleta do plugin foi feita no Brasil: Facebook e Microsoft Clarity só apareceram na coleta brasileira, LinkedIn e X só no scan americano, e \texttt{google.\allowbreak{}com.\allowbreak{}br} só no Brasil. Além disso, a mesma página varia entre carregamentos: o YouTube teve 3 rastreadores no Blacklight em 26/09 e 0 em 28/09, e a contagem de cookies do G1 subiu de 13 para 31 enquanto a página permanecia aberta.
+  \item \textbf{Saturação.} Com limite de 20 domínios, o G1 atinge a penalidade máxima desse critério, e qualquer domínio adicional deixa de pesar. O mesmo vale para os três indicadores de hijacking. É uma escolha deliberada para que um único critério não domine a nota, mas ela reduz a capacidade de distinguir sites muito invasivos entre si.
+\end{enumerate}
 
-Também foram observadas diferenças relacionadas ao momento da coleta. Páginas dinâmicas podem continuar realizando requisições depois da exportação do HAR ou da abertura do popup. No YouTube, o HAR identificou uma requisição associada ao domínio \texttt{googleapis.com} que não foi apresentada pelo plugin, possivelmente devido ao momento da inicialização do monitoramento ou ao uso de recursos previamente armazenados pelo navegador.
+Em síntese, o score do plugin é uma medida da exposição efetiva do usuário no navegador em que foi coletado, enquanto o Blacklight é uma medida do comportamento potencial do site. As duas são complementares, e as divergências ficam explicáveis pela configuração de proteção, pela localização e pela diferença entre ``domínio de terceiro'' e ``rastreador conhecido''.
 
-Por segurança, os arquivos HAR publicados no repositório foram sanitizados. Valores de cookies, identificadores, endereços IP, chaves de API, assinaturas e conteúdos enviados em requisições foram substituídos, enquanto os domínios, métodos, códigos de resposta e demais metadados necessários à análise foram preservados.
+\section{Limitações}
+
+\begin{itemize}
+  \item Domínio de terceiro não é sinônimo de rastreador. O plugin não usa listas de rastreadores e conta como terceiros CDNs e domínios da mesma organização.
+  \item Cookies definidos por JavaScript não são contabilizados, e redefinições do mesmo cookie contam várias vezes.
+  \item O armazenamento HTML5 é medido apenas no documento principal e em um único momento, cerca de 1 segundo após o carregamento.
+  \item O detector de canvas conta qualquer leitura de canvas, sem distinguir uso legítimo de fingerprinting, e não monitora WebGL, fontes, \texttt{navigator} ou \texttt{screen}.
+  \item Os indicadores de hook não distinguem instrumentação legítima (monitoramento, bloqueadores) de código malicioso, e as substituições feitas pelo próprio plugin são observáveis pela página, como mostrou o teste js-leaks.
+  \item A abertura de abas é sinalizada mesmo quando resulta de um clique legítimo, e fluxos legítimos de login (SSO/OAuth) podem ser sinalizados como bounce tracking.
+  \item O plugin detecta, mas não impede, bounce tracking e cookie sync, e não apaga o armazenamento de sites intermediários.
+  \item Os resultados dependem da configuração do navegador: com o ETP ativo, parte do rastreamento é bloqueada antes de ser observada.
+\end{itemize}
 
 \section{Conclusão}
 
-O desenvolvimento do Privacy Inspector demonstrou a aplicação das APIs de extensões do Firefox na observação de comportamentos relacionados à privacidade durante a navegação. A extensão foi capaz de identificar domínios de terceiros únicos, registrar cookies definidos por respostas HTTP e apresentar o uso de \texttt{localStorage}, \texttt{sessionStorage} e IndexedDB.
+O Privacy Inspector detecta conexões com terceiros, cookies por tipo, armazenamento HTML5, canvas fingerprinting, bounce tracking, indicadores de hijacking e hook e calcula uma pontuação de privacidade com metodologia explícita, além de permitir o bloqueio de domínios escolhidos pelo usuário. Nas DuckDuckGo Privacy Test Pages, o plugin detectou todos os rastreadores de Tracker Reporting, inclusive os carregados dinamicamente ou com atraso, as chamadas de canvas, o bounce tracking e os indicadores de WebSocket e polling. As divergências encontradas se explicam por proteções que o próprio Firefox já aplica (\emph{query stripping} e particionamento de armazenamento) ou por funcionalidades que o plugin não se propõe a oferecer, como surrogates.
 
-Nas DuckDuckGo Privacy Test Pages, o plugin detectou as conexões utilizadas nos testes de Tracker Reporting, inclusive aquelas criadas dinamicamente ou após um atraso. O teste de Storage Blocking confirmou a detecção dos três mecanismos HTML5 implementados. Por outro lado, os testes de fingerprinting demonstraram que atividades baseadas em APIs do navegador podem ocorrer sem cookies ou conexões de terceiros, não sendo explicitamente identificadas pela versão atual da extensão.
-
-A análise dos sites reais mostrou diferentes perfis de comportamento. O G1 apresentou a maior quantidade de requisições e domínios de terceiros, a UBC apresentou menor utilização de armazenamento HTML5 e o YouTube destacou-se pela presença de dez bancos IndexedDB. A comparação com os arquivos HAR confirmou a maior parte das contagens de domínios do plugin e permitiu explicar divergências relacionadas a cookies, bloqueios do navegador, recursos armazenados e limites temporais da coleta.
-
-Portanto, o Privacy Inspector atende ao objetivo de fornecer uma visão acessível dos principais domínios, cookies e mecanismos de armazenamento utilizados durante o carregamento de uma página. Ao mesmo tempo, os testes indicam oportunidades de evolução, como a integração com listas conhecidas de rastreadores, a inspeção de armazenamento em iframes e a interceptação de APIs associadas a fingerprinting.
+Nos sites reais, a comparação com o HAR, o Blacklight e o uBlock Origin mostrou que cada ferramenta responde a uma pergunta diferente: o plugin observa o que aconteceu no navegador, o Blacklight revela o que o site tenta fazer sem proteção, e o uBlock Origin mostra o que uma lista de filtros impede, inclusive rastreadores de primeira parte. A principal lição da análise é que o bloqueio de um único script, como o Prebid no G1 ou o Google Tag Manager na UBC, elimina em cadeia dezenas de rastreadores. Por isso, contagens isoladas de domínios ou cookies precisam ser interpretadas junto com as condições da coleta.
 
 \end{document}
