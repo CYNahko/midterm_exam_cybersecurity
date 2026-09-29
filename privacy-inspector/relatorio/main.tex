@@ -35,12 +35,21 @@
     \caption{#4}
   \end{figure}}
 
-% Duas capturas lado a lado.
+% Duas capturas lado a lado, com a mesma altura.
 \newcommand{\pair}[3]{%
   \begin{figure}[H]
     \centering
-    \includegraphics[width=0.62\textwidth,height=0.4\textheight,keepaspectratio]{#1}\hfill
-    \includegraphics[width=0.3\textwidth,height=0.4\textheight,keepaspectratio]{#2}
+    \includegraphics[height=6.2cm,width=0.66\textwidth,keepaspectratio]{#1}\hfill
+    \includegraphics[height=6.2cm,width=0.3\textwidth,keepaspectratio]{#2}
+    \caption{#3}
+  \end{figure}}
+
+% Duas capturas empilhadas, cada uma na largura total.
+\newcommand{\stack}[3]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth,height=0.42\textheight,keepaspectratio]{#1}\\[4pt]
+    \includegraphics[width=\textwidth,height=0.42\textheight,keepaspectratio]{#2}
     \caption{#3}
   \end{figure}}
 
@@ -143,12 +152,12 @@ Fetch com atraso de 5 s & Mesma requisição, 5 s após o carregamento & \texttt
 
 Em todos os casos o plugin registrou 1 item em \texttt{localStorage}, 1 em \texttt{sessionStorage} e 1 banco IndexedDB, criados pela própria página de testes. O ícone do uBlock Origin não aparece nas capturas porque a extensão estava desativada.
 
-\pair{evidencias/ddg/tracker-reporting/1-major-via-script.png}{evidencias/ddg/tracker-reporting/1-major-via-surrogate.png}{Major tracker via script (esq.) e com surrogate (dir.).}
-\pair{evidencias/ddg/tracker-reporting/1-major-via-img.png}{evidencias/ddg/tracker-reporting/1-major-via-img-1.png}{Major tracker via img: popup e seção de cookies.}
-\pair{evidencias/ddg/tracker-reporting/tracker-document-fragment.png}{evidencias/ddg/tracker-reporting/tracker-document-fragment-1.png}{Tracker via DocumentFragment.}
-\pair{evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s.png}{evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s-1.png}{Tracker via DocumentFragment com atraso de 5 s.}
-\pair{evidencias/ddg/tracker-reporting/1-major-via-fetch.png}{evidencias/ddg/tracker-reporting/1-major-via-fetch-1.png}{Major tracker via fetch.}
-\pair{evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s.png}{evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s-1.png}{Major tracker via fetch com atraso de 5 s.}
+\stack{evidencias/ddg/tracker-reporting/1-major-via-script-crop.png}{evidencias/ddg/tracker-reporting/1-major-via-surrogate-crop.png}{Major tracker via script (acima) e com surrogate (abaixo).}
+\stack{evidencias/ddg/tracker-reporting/1-major-via-img-crop.png}{evidencias/ddg/tracker-reporting/1-major-via-img-1.png}{Major tracker via img: popup e seção de cookies.}
+\stack{evidencias/ddg/tracker-reporting/tracker-document-fragment-crop.png}{evidencias/ddg/tracker-reporting/tracker-document-fragment-1.png}{Tracker via DocumentFragment.}
+\stack{evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s-crop.png}{evidencias/ddg/tracker-reporting/tracker-document-fragment-delay-5s-1-crop.png}{Tracker via DocumentFragment com atraso de 5 s.}
+\stack{evidencias/ddg/tracker-reporting/1-major-via-fetch-crop.png}{evidencias/ddg/tracker-reporting/1-major-via-fetch-1-crop.png}{Major tracker via fetch.}
+\stack{evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s-crop.png}{evidencias/ddg/tracker-reporting/1-major-via-fetch-delay-5s-1-crop.png}{Major tracker via fetch com atraso de 5 s.}
 
 \subsection{Storage Blocking}
 
@@ -162,7 +171,7 @@ Storage Blocking & Armazenar e recuperar um valor por 23 mecanismos; a página r
 \caption{Resultado de Storage Blocking.}
 \end{table}
 
-\evid{evidencias/ddg/storage-blocking/storage-blocking.png}{0.9}{Storage Blocking (coleta de 27/09, versão anterior do popup).}
+\evid{evidencias/ddg/storage-blocking/storage-blocking-crop.png}{1}{Storage Blocking (coleta de 27/09, versão anterior do popup).}
 
 \subsection{Fingerprinting e Canvas}
 
@@ -177,8 +186,8 @@ Canvas visual check & Renderização e leitura por data URL, \texttt{getImageDat
 \caption{Resultados de fingerprinting.}
 \end{table}
 
-\evid{evidencias/ddg/fingerprinting-canvas/fingerprinting-general.png}{0.9}{Fingerprinting geral: canvas detectado com 6 chamadas.}
-\evid{evidencias/ddg/fingerprinting-canvas/fingerprinting-canvas.png}{0.9}{Canvas visual check e métodos interceptados.}
+\evid{evidencias/ddg/fingerprinting-canvas/fingerprinting-general-crop.png}{1}{Fingerprinting geral: canvas detectado com 6 chamadas.}
+\evid{evidencias/ddg/fingerprinting-canvas/fingerprinting-canvas-crop.png}{1}{Canvas visual check e métodos interceptados.}
 
 \subsection{Tracker Blocking (Request Blocking)}
 
@@ -194,8 +203,8 @@ Request Blocking & A página tenta 23 tipos de requisição a \texttt{bad.\allow
 
 A capacidade de bloqueio é demonstrada separadamente na Seção~\ref{sec:blocklist}. O resultado completo exportado pela página está em \path{evidencias/ddg/request-blocking/request-blocking-results.json}.
 
-\evid{evidencias/ddg/request-blocking/request-blocking.png}{0.9}{Request Blocking: resultados da página e popup.}
-\evid{evidencias/ddg/request-blocking/request-blocking-1.png}{0.9}{Request Blocking: indicadores de WebSocket e polling.}
+\evid{evidencias/ddg/request-blocking/request-blocking-crop.png}{1}{Request Blocking: resultados da página e popup.}
+\evid{evidencias/ddg/request-blocking/request-blocking-1-crop.png}{1}{Request Blocking: indicadores de WebSocket e polling.}
 
 \subsection{Storage Partitioning}
 
@@ -209,8 +218,8 @@ Storage Partitioning & Dados de 21 mecanismos isolados entre origens; resultado:
 \caption{Resultado de Storage Partitioning.}
 \end{table}
 
-\evid{evidencias/ddg/storage-partitioning/storage-partitioning-1.png}{0.9}{Storage Partitioning: resultados e popup.}
-\evid{evidencias/ddg/storage-partitioning/storage-partitioning-2.png}{0.9}{Storage Partitioning: continuação do popup.}
+\evid{evidencias/ddg/storage-partitioning/storage-partitioning-1-crop.png}{1}{Storage Partitioning: resultados e popup.}
+\evid{evidencias/ddg/storage-partitioning/storage-partitioning-2-crop.png}{1}{Storage Partitioning: continuação do popup.}
 
 \subsection{Bounce Tracking}
 
@@ -224,7 +233,7 @@ Bounce Tracking (\emph{Go to good.third-party.site}) & \texttt{bad.\allowbreak{}
 \caption{Resultado de Bounce Tracking.}
 \end{table}
 
-\evid{evidencias/ddg/bounce-tracking/bounce-tracking.png}{0.9}{Bounce Tracking: página de destino com o UID na URL e a cadeia detectada no popup.}
+\evid{evidencias/ddg/bounce-tracking/bounce-tracking-crop.png}{1}{Bounce Tracking: página de destino com o UID na URL e a cadeia detectada no popup.}
 
 \subsection{Query Parameters}
 
@@ -238,7 +247,7 @@ Link com \texttt{fbclid}, \texttt{fb\_source} e 1 parâmetro comum & Resultado e
 \caption{Resultado de Query Parameters.}
 \end{table}
 
-\evid{evidencias/ddg/query-parameters/query-parameters.png}{0.9}{Query Parameters: URL já sem \texttt{fbclid}.}
+\evid{evidencias/ddg/query-parameters/query-parameters-crop.png}{1}{Query Parameters: URL já sem \texttt{fbclid}.}
 
 \subsection{js-leaks e indicadores de hook}
 
@@ -256,18 +265,18 @@ js-leaks & Lista de diferenças no escopo global em relação ao perfil de refer
 
 Esse resultado mostra um compromisso de projeto. O mesmo mecanismo que o BeEF usa para instrumentar uma página, a substituição de funções globais, é usado pelo plugin para detectar comportamentos e pelo uBlock Origin para neutralizar anúncios, e em todos os casos a alteração pode ser observada pela página, que pode usá-la para identificar a extensão ou para evitá-la.
 
-\evid{evidencias/ddg/js-leaks/js-leaks-plugin-ligado.png}{0.9}{js-leaks com o plugin ligado: \texttt{window.\allowbreak{}open} alterado.}
-\evid{evidencias/ddg/js-leaks/js-leaks-plugin-desligado.png}{0.9}{js-leaks com o plugin desligado: \texttt{window.\allowbreak{}open} não aparece.}
+\evid{evidencias/ddg/js-leaks/js-leaks-plugin-ligado-crop.png}{1}{js-leaks com o plugin ligado: \texttt{window.\allowbreak{}open} alterado.}
+\evid{evidencias/ddg/js-leaks/js-leaks-plugin-desligado-crop.png}{1}{js-leaks com o plugin desligado: \texttt{window.\allowbreak{}open} não aparece.}
 
 Como a página js-leaks não executa nenhum hook, a detecção foi validada também com um teste controlado em \texttt{example.\allowbreak{}com}, uma página sem scripts de terceiros: o comando \texttt{window.fetch = () => \{\}} executado no console gerou exatamente um indicador, \emph{Objeto global sobrescrito: window.fetch}, sem cookies, terceiros ou outros indicadores.
 
-\evid{evidencias/ddg/hijacking/hijacking-fetch.png}{0.9}{Teste controlado de hook em \texttt{example.\allowbreak{}com}.}
+\evid{evidencias/ddg/hijacking/hijacking-fetch-crop.png}{1}{Teste controlado de hook em \texttt{example.\allowbreak{}com}.}
 
 \subsection{Lista de bloqueio personalizada}\label{sec:blocklist}
 
 Com \texttt{doubleclick.\allowbreak{}net} adicionado à lista e o uBlock Origin desativado, a página \emph{Major tracker via script} foi recarregada. O popup registrou 1 requisição bloqueada para \texttt{doubleclick.\allowbreak{}net} e exibiu o domínio na lista, com a opção de removê-lo. O domínio foi removido da lista antes das demais coletas.
 
-\evid{evidencias/ddg/blocked/blocked.png}{0.9}{Lista de bloqueio: requisição para \texttt{doubleclick.\allowbreak{}net} cancelada pelo plugin.}
+\evid{evidencias/ddg/blocked/blocked-crop.png}{1}{Lista de bloqueio: requisição para \texttt{doubleclick.\allowbreak{}net} cancelada pelo plugin.}
 
 \section{Análise de sites reais}
 
@@ -336,7 +345,7 @@ Os quatro indicadores de hook no G1 apareceram com o uBlock Origin desativado, p
 \popups{evidencias/sites-reais/g1/privacy-inspector.png}{evidencias/sites-reais/g1/privacy-inspector-1.png}{evidencias/sites-reais/g1/privacy-inspector-2.png}{Popup do plugin no G1: score, domínios e armazenamento.}
 \pair{evidencias/sites-reais/g1/privacy-inspector-3.png}{evidencias/sites-reais/g1/privacy-inspector-4.png}{Popup do plugin no G1: hijacking e cookies.}
 \evid{evidencias/sites-reais/g1/blacklight.png}{0.6}{Blacklight no G1 (detalhes em \texttt{blacklight-detail.\allowbreak{}png}).}
-\evid{evidencias/sites-reais/g1/ublock.png}{0.9}{uBlock Origin no G1: 50 bloqueios.}
+\evid{evidencias/sites-reais/g1/ublock.png}{1}{uBlock Origin no G1: 50 bloqueios.}
 \evid{evidencias/sites-reais/g1/ublock-logger.png}{0.8}{Logger do uBlock Origin no G1 (amostra; registro completo em \texttt{ublock-logger.\allowbreak{}md}).}
 
 \subsection{UBC}
@@ -363,7 +372,7 @@ Plugin e HAR coincidem nos 8 domínios de terceiros. Nenhum cookie foi definido 
 
 \popups{evidencias/sites-reais/ubc/privacy-inspector.png}{evidencias/sites-reais/ubc/privacy-inspector-1.png}{evidencias/sites-reais/ubc/privacy-inspector-2.png}{Popup do plugin na UBC.}
 \evid{evidencias/sites-reais/ubc/blacklight.png}{0.6}{Blacklight na UBC (detalhes em \texttt{blacklight-detalhes.\allowbreak{}png}).}
-\evid{evidencias/sites-reais/ubc/ublock.png}{0.9}{uBlock Origin na UBC: 1 bloqueio.}
+\evid{evidencias/sites-reais/ubc/ublock.png}{1}{uBlock Origin na UBC: 1 bloqueio.}
 \evid{evidencias/sites-reais/ubc/ublock-logger.png}{0.8}{Logger do uBlock Origin na UBC: \texttt{gtm.\allowbreak{}js} substituído por surrogate.}
 
 \subsection{YouTube}
@@ -390,7 +399,7 @@ Plugin e HAR coincidem nos 7 domínios de terceiros. O plugin contabilizou 4 coo
 
 \popups{evidencias/sites-reais/youtube/privacy-inspector.png}{evidencias/sites-reais/youtube/privacy-inspector-1.png}{evidencias/sites-reais/youtube/privacy-inspector-2.png}{Popup do plugin no YouTube.}
 \evid{evidencias/sites-reais/youtube/blacklight.png}{0.6}{Blacklight no YouTube em 28/09 (o scan de 26/09 está em \texttt{blacklight-2026-09-26.\allowbreak{}png}).}
-\evid{evidencias/sites-reais/youtube/ublock.png}{0.9}{uBlock Origin no YouTube: 5 bloqueios.}
+\evid{evidencias/sites-reais/youtube/ublock.png}{1}{uBlock Origin no YouTube: 5 bloqueios.}
 \evid{evidencias/sites-reais/youtube/ublock-logger.png}{0.8}{Logger do uBlock Origin no YouTube: bloqueios de rede e scriptlets que removem anúncios do player.}
 
 \section{Pontuação de privacidade}
